@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocFlow · Convertí cualquier archivo a Markdown</title>
+<meta name="description" content="Convertí PDF, Word, Excel, PowerPoint, imágenes y más a Markdown limpio — 100% en tu navegador, sin límites y sin enviar nada a ningún servidor.">
+<style>
+  :root {
+    --bg: #f4f5fb;
+    --bg-grad: radial-gradient(1200px 500px at 50% -10%, #e4e6ff 0%, transparent 60%);
+    --card: #ffffff;
+    --card-2: #f8f9fe;
+    --border: #e4e6f0;
+    --text: #1d2033;
+    --muted: #7a7f99;
+    --accent: #5b5ef4;
+    --accent-soft: #eceded;
+    --accent-bg: #eef0ff;
+    --ok: #0fa678;
+    --ok-bg: #e3f7f0;
+    --warn: #c07c10;
+    --warn-bg: #fdf3e0;
+    --err: #d64550;
+    --err-bg: #fdeaec;
+    --shadow: 0 1px 2px rgba(29,32,51,.05), 0 8px 24px -12px rgba(29,32,51,.12);
+    --shadow-lg: 0 2px 4px rgba(29,32,51,.06), 0 16px 40px -16px rgba(91,94,244,.25);
+    --radius: 16px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  [data-theme="dark"] {
+    --bg: #12141f;
+    --bg-grad: radial-gradient(1200px 500px at 50% -10%, #23264a 0%, transparent 60%);
+    --card: #1b1e2e;
+    --card-2: #202436;
+    --border: #2c3048;
+    --text: #e8eaf6;
+    --muted: #8b90ad;
+    --accent: #7c7ffc;
+    --accent-bg: #262a4a;
+    --ok: #34d19f;
+    --ok-bg: #16342c;
+    --warn: #e0a44a;
+    --warn-bg: #362a14;
+    --err: #f07683;
+    --err-bg: #3a1e23;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    --shadow-lg: 0 2px 4px rgba(0,0,0,.4), 0 16px 40px -16px rgba(60,64,180,.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    background-repeat: no-repeat;
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.55;
+    transition: background .3s, color .3s;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 80px; }
+
+  /* ── Header ── */
+  header { padding: 28px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 13px; flex-shrink: 0;
+    background: linear-gradient(135deg, #5b5ef4, #9a5cf5);
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px;
+    box-shadow: 0 6px 16px -6px rgba(91,94,244,.6);
+  }
+  .brand h1 { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+  .brand p { font-size: 12.5px; color: var(--muted); margin-top: -2px; }
+  .theme-btn {
+    width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); cursor: pointer; font-size: 17px;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .theme-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 6px; margin: 18px 0 20px; background: var(--card); border: 1px solid var(--border); padding: 5px; border-radius: 14px; box-shadow: var(--shadow); }
+  .tab {
+    flex: 1; padding: 10px 8px; border: none; border-radius: 10px; cursor: pointer;
+    background: transparent; color: var(--muted); font-size: 14px; font-weight: 600;
+    transition: all .18s; white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px -4px rgba(91,94,244,.5); }
+
+  section { display: none; animation: fadeUp .25s ease; }
+  section.active { display: block; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ── Dropzone ── */
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: var(--radius); background: var(--card);
+    padding: 44px 24px; text-align: center; cursor: pointer; transition: all .2s;
+    box-shadow: var(--shadow);
+  }
+  .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-bg); transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+  .dz-icon { font-size: 38px; margin-bottom: 10px; display: block; }
+  .dropzone h2 { font-size: 16.5px; font-weight: 700; }
+  .dropzone p { font-size: 13px; color: var(--muted); margin-top: 5px; }
+  .dz-hint { display: inline-block; margin-top: 12px; font-size: 12px; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--border); padding: 4px 12px; border-radius: 99px; }
+
+  .formats { margin-top: 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+  .formats h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 10px; }
+  .fmt-row { display: flex; align-items: center; gap: 10px; font-size: 13.5px; padding: 4px 0; }
+  .fmt-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .fmt-row small { margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; }
+
+  /* ── File cards ── */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-top: 14px; overflow: hidden; animation: fadeUp .25s ease; }
+  .card-head { padding: 13px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
+  .b-type { background: var(--accent-bg); color: var(--accent); }
+  .b-ok { background: var(--ok-bg); color: var(--ok); }
+  .b-warn { background: var(--warn-bg); color: var(--warn); }
+  .b-err { background: var(--err-bg); color: var(--err); }
+  .fname { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  .spacer { flex: 1; }
+  .icon-btn { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; padding: 5px 7px; border-radius: 8px; transition: all .15s; }
+  .icon-btn:hover { background: var(--err-bg); color: var(--err); }
+
+  .progress-area { padding: 6px 16px 15px; }
+  .progress-label { font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
+  .bar { height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #9a5cf5); transition: width .3s; }
+  .bar.indeterminate > div { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+  .stats { display: flex; gap: 8px; padding: 0 16px 12px; flex-wrap: wrap; }
+  .stat { font-size: 12px; color: var(--muted); background: var(--card-2); border: 1px solid var(--border); padding: 4px 10px; border-radius: 8px; }
+  .stat b { color: var(--text); }
+  .stat.save { color: var(--ok); border-color: transparent; background: var(--ok-bg); }
+  .stat.save b { color: var(--ok); }
+
+  .preview {
+    margin: 0 16px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card-2); font-family: var(--mono); font-size: 12.5px;
+    padding: 12px; max-height: 260px; overflow: auto; white-space: pre-wrap;
+    word-break: break-word; color: var(--text);
+  }
+  .card-actions { display: flex; gap: 8px; padding: 0 16px 16px; flex-wrap: wrap; }
+  .btn {
+    flex: 1; min-width: 130px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 11px 16px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: 13.5px; font-weight: 700; transition: all .15s; font-family: inherit;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 14px -4px rgba(91,94,244,.5); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost { background: var(--card); border: 1px solid var(--border); color: var(--text); flex: 0 0 auto; }
+  .btn-ghost:hover { background: var(--card-2); }
+  .btn-ok { background: var(--ok); color: #fff; }
+  .btn-warn { background: var(--warn); color: #fff; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .error-box { margin: 0 16px 16px; padding: 12px 14px; border-radius: 10px; background: var(--err-bg); color: var(--err); font-size: 13px; }
+  .notice-box { margin: 0 16px 16px; padding: 12px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+
+  .bulkbar { position: sticky; bottom: 14px; margin-top: 16px; display: flex; gap: 8px; background: var(--card); border: 1px solid var(--border); padding: 10px; border-radius: 14px; box-shadow: var(--shadow-lg); z-index: 5; }
+
+  /* ── Textareas ── */
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-top: 14px; }
+  .panel-head { padding: 9px 14px; background: var(--card-2); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .panel-head span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  .panel-head small { font-size: 11.5px; color: var(--muted); }
+  textarea {
+    width: 100%; border: none; outline: none; resize: vertical; background: transparent;
+    color: var(--text); padding: 14px; font-family: var(--mono); font-size: 13px; min-height: 200px; line-height: 1.6;
+  }
+  .actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  .tip { margin-top: 14px; background: var(--card-2); border: 1px dashed var(--border); border-radius: var(--radius); padding: 14px 16px; font-size: 13px; color: var(--muted); }
+  .tip b { color: var(--text); }
+
+  /* ── Markdown preview (export) ── */
+  .md-preview { padding: 18px; font-size: 14px; max-height: 420px; overflow: auto; line-height: 1.65; }
+  .md-preview h1 { font-size: 1.45em; margin: .8em 0 .35em; }
+  .md-preview h2 { font-size: 1.25em; margin: .8em 0 .3em; }
+  .md-preview h3 { font-size: 1.1em; margin: .7em 0 .25em; }
+  .md-preview p { margin: .5em 0; }
+  .md-preview li { margin-left: 1.3em; }
+  .md-preview table { border-collapse: collapse; margin: .6em 0; width: 100%; font-size: .93em; }
+  .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+  .md-preview th { background: var(--card-2); }
+  .md-preview code { background: var(--card-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-family: var(--mono); font-size: .9em; }
+
+  footer { margin-top: 36px; text-align: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 18px; }
+  footer p { margin: 3px 0; }
+
+  /* ── Toast ── */
+  #toasts { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast {
+    background: var(--text); color: var(--bg); font-size: 13.5px; font-weight: 600;
+    padding: 10px 20px; border-radius: 99px; box-shadow: var(--shadow-lg);
+    animation: toastIn .25s ease;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 520px) {
+    .tab { font-size: 12.5px; padding: 9px 4px; }
+    .fname { max-width: 150px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="logo">df</div>
+      <div>
+        <h1>DocFlow <span style="font-size:12px;color:var(--muted);font-weight:600">v3</span></h1>
+        <p>Cualquier archivo → Markdown limpio · 100% local, sin límites</p>
+      </div>
+    </div>
+    <button class="theme-btn" id="themeBtn" title="Cambiar tema">🌙</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="convert">📥 Convertir</button>
+    <button class="tab" data-tab="raw">📋 Texto crudo</button>
+    <button class="tab" data-tab="export">📤 Exportar</button>
+  </nav>
+
+  <!-- ══════════ TAB: CONVERTIR ══════════ -->
+  <section id="tab-convert" class="active">
+    <div class="dropzone" id="dropzone">
+      <span class="dz-icon">📂</span>
+      <h2>Arrastrá tus archivos o hacé clic para elegir</h2>
+      <p>Podés soltar varios a la vez · PDF · Word · Excel · PowerPoint · Imágenes · HTML · TXT · CSV · JSON</p>
+      <span class="dz-hint">📋 También podés pegar una imagen o captura con Ctrl+V / Cmd+V</span>
+      <input type="file" id="fileInput" multiple hidden
+        accept=".pdf,.docx,.doc,.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.md,.markdown,.json,.xml,.yaml,.yml,.html,.htm,.pptx,.ppt,.jpg,.jpeg,.png,.webp,.gif,.bmp">
+    </div>
+
+    <div id="fileList"></div>
+
+    <div class="bulkbar" id="bulkbar" style="display:none">
+      <button class="btn btn-primary" id="copyAllBtn">📑 Copiar todo</button>
+      <button class="btn btn-ghost" id="downloadAllBtn">⬇️ Descargar todo (.md)</button>
+      <button class="btn btn-ghost" id="clearAllBtn">🗑️ Limpiar</button>
+    </div>
+
+    <div class="formats" id="formatsBox">
+      <h3>Cómo se procesa cada formato</h3>
+      <div class="fmt-row"><span class="dot" style="background:var(--ok)"></span><b>Word · Excel · PowerPoint · CSV · TXT · JSON · HTML</b><small>⚡ Instantáneo</small></div>
+      <div class="fmt-row"><span class="dot" style="background:var(--ok)"></span><b>PDF con texto</b> (aunque tenga cientos de páginas)<small>⚡ Instantáneo</small></div>
+      <div class="fmt-row"><span class="dot" style="background:var(--warn)"></span><b>PDF escaneado · Imágenes · Capturas</b><small>🔍 OCR local (~5-15 seg/página)</small></div>
+      <div class="fmt-row" style="margin-top:6px;padding-top:10px;border-top:1px solid var(--border)"><span class="dot" style="background:var(--accent)"></span><span style="color:var(--muted);font-size:13px">Todo ocurre <b style="color:var(--text)">en tu navegador</b>: ningún archivo sale de tu computadora. Sin API, sin tokens, sin límite de tamaño.</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════ TAB: TEXTO CRUDO ══════════ -->
+  <section id="tab-raw">
+    <div class="panel">
+      <div class="panel-head"><span>Pegá tu texto</span><small id="rawCount"></small></div>
+      <textarea id="rawInput" placeholder="Pegá acá cualquier texto: notas sueltas, una transcripción, un correo largo, un borrador desordenado..."></textarea>
+    </div>
+    <div class="actions-row">
+      <button class="btn btn-primary" id="cleanBtn">✨ Limpiar texto</button>
+    </div>
+    <div id="rawResultArea"></div>
+    <div class="tip">🎙️ <b>¿Transcripción de audio?</b> Transcribila en otra app (dictado nativo, Otter, etc.) y pegala acá. La limpieza quita ruido estructural —espacios, guiones cortados, números de página— sin tocar ni una palabra del contenido.</div>
+  </section>
+
+  <!-- ══════════ TAB: EXPORTAR ══════════ -->
+  <section id="tab-export">
+    <div class="panel">
+      <div class="panel-head"><span>Pegá tu Markdown</span></div>
+      <textarea id="exportInput" placeholder="# Mi documento&#10;&#10;Pegá acá el contenido en Markdown para previsualizarlo o guardarlo como PDF..."></textarea>
+    </div>
+    <div id="exportPreviewArea"></div>
+    <div class="actions-row">
+      <button class="btn btn-primary" id="printBtn">🖨️ Guardar como PDF</button>
+      <button class="btn btn-ghost" id="copyExportBtn">📋 Copiar</button>
+      <button class="btn btn-ghost" id="downloadExportBtn">⬇️ .md</button>
+    </div>
+    <div class="tip">💡 <b>Para pasarlo a Notion:</b> copiá el Markdown y pegalo directo en una página de Notion — se convierte solo en títulos, listas y tablas con formato.</div>
+  </section>
+
+  <footer>
+    <p>🔒 Conversión 100% local: tus archivos nunca salen de tu dispositivo.</p>
+    <p>Necesita internet solo la primera vez que abrís la página (para cargar las librerías, que quedan en caché).</p>
+    <p style="margin-top:6px">DocFlow v3 · hecho para el flujo de trabajo de Stu ⚙️</p>
+  </footer>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+
+/* ═══════════════════ Lazy loading de librerías (CDN) ═══════════════════ */
+
+const LIBS = {
+  pdfjs:    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+  pdfworker:"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",
+  mammoth:  "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js",
+  xlsx:     "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+  papa:     "https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js",
+  jszip:    "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
+  tesseract:"https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js",
+};
+
+const _loaded = {};
+function loadScript(url) {
+  if (_loaded[url]) return _loaded[url];
+  _loaded[url] = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = () => res();
+    s.onerror = () => { delete _loaded[url]; rej(new Error("No se pudo cargar una librería (¿hay internet?): " + url)); };
+    document.head.appendChild(s);
+  });
+  return _loaded[url];
+}
+
+async function getPdfjs() {
+  await loadScript(LIBS.pdfjs);
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.pdfworker;
+  return window.pdfjsLib;
+}
+
+let _tessWorker = null;
+async function getOcrWorker(onProgress) {
+  await loadScript(LIBS.tesseract);
+  if (!_tessWorker) {
+    _tessWorker = await Tesseract.createWorker("spa+eng", 1, {
+      logger: (m) => {
+        if (m.status === "recognizing text" && onProgress) onProgress(m.progress);
+      },
+    });
+  }
+  return _tessWorker;
+}
+
+/* ═══════════════════ Utilidades de limpieza (0 tokens, sin tocar contenido) ═══════════════════ */
+
+const estTokens = (t) => Math.ceil((t || "").length / 4);
+const fmt = (n) => (n || 0).toLocaleString("es");
+
+const collapseWhitespace = (text) =>
+  (text || "")
+    .split("\n").map((l) => l.replace(/[ \t]+$/g, "")).join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+const fixHyphenation = (text) =>
+  (text || "").replace(/([a-zà-öø-ÿ])-\n([a-zà-öø-ÿ])/gi, "$1$2");
+
+const stripPageNumbers = (text) =>
+  (text || "").split("\n")
+    .filter((l) => !/^\s*(p[aá]gina|page)?\s*\d{1,4}\s*(\/|de|of)?\s*\d{0,4}\s*$/i.test(l) || !/\d/.test(l))
+    .join("\n");
+
+const cleanProse = (text) => collapseWhitespace(stripPageNumbers(fixHyphenation(text || "")));
+
+/* Con PDFs sí sabemos dónde termina cada página, así que acá el filtrado de
+   encabezados/pies repetidos es seguro: una línea que aparece al inicio o al
+   final de la mayoría de las páginas es ruido estructural, no contenido. */
+function stripRepeatedPageLines(pages) {
+  if (pages.length < 4) return pages;
+  const counts = new Map();
+  for (const p of pages) {
+    const lines = p.split("\n").map((l) => l.trim()).filter(Boolean);
+    const edges = new Set([...lines.slice(0, 2), ...lines.slice(-2)]);
+    for (const e of edges) counts.set(e, (counts.get(e) || 0) + 1);
+  }
+  const threshold = Math.ceil(pages.length * 0.6);
+  const repeated = new Set(
+    [...counts].filter(([line, n]) => n >= threshold && line.length <= 120).map(([line]) => line)
+  );
+  if (!repeated.size) return pages;
+  return pages.map((p) => {
+    const lines = p.split("\n");
+    const keep = [];
+    lines.forEach((l, i) => {
+      const t = l.trim();
+      const isEdge = i < 2 || i >= lines.length - 2;
+      if (isEdge && repeated.has(t)) return;
+      keep.push(l);
+    });
+    return keep.join("\n");
+  });
+}
+
+/* ═══════════════════ HTML → Markdown ═══════════════════ */
+
+function decodeEntities(s) {
+  const el = document.createElement("textarea");
+  el.innerHTML = s;
+  return el.value;
+}
+
+function tableToMd(tableHtml) {
+  const rows = [];
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let tr;
+  while ((tr = trRe.exec(tableHtml))) {
+    const cells = [];
+    const cellRe = /<(t[hd])[^>]*>([\s\S]*?)<\/\1>/gi;
+    let c;
+    while ((c = cellRe.exec(tr[1]))) {
+      cells.push(decodeEntities(c[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim());
+    }
+    if (cells.length) rows.push(cells);
+  }
+  if (!rows.length) return "";
+  const width = Math.max(...rows.map((r) => r.length));
+  const line = (r) => "| " + Array.from({ length: width }, (_, i) => r[i] || "").join(" | ") + " |";
+  const out = [line(rows[0]), "| " + Array(width).fill("---").join(" | ") + " |", ...rows.slice(1).map(line)];
+  return "\n" + out.join("\n") + "\n";
+}
+
+function htmlToMd(html) {
+  let md = html || "";
+  md = md.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  md = md.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, inner) => tableToMd(inner));
+  md = md.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, l, c) => "\n" + "#".repeat(+l) + " " + c.replace(/<[^>]+>/g, "").trim() + "\n\n");
+  md = md.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, "**$2**");
+  md = md.replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, "*$2*");
+  md = md.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)");
+  md = md.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, inner) => {
+    let i = 0;
+    return "\n" + inner.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (__, c) => ++i + ". " + c.trim() + "\n") + "\n";
+  });
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "- $1\n");
+  md = md.replace(/<\/?(ul|ol)[^>]*>/gi, "\n");
+  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, c) => "\n> " + c.replace(/<[^>]+>/g, "").trim() + "\n\n");
+  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "$1\n\n");
+  md = md.replace(/<br\s*\/?>/gi, "\n");
+  md = md.replace(/<img[^>]*>/gi, "");
+  md = md.replace(/<[^>]+>/g, "");
+  md = decodeEntities(md);
+  return collapseWhitespace(md);
+}
+
+/* ═══════════════════ Conversores ═══════════════════ */
+
+async function convertDocx(file) {
+  await loadScript(LIBS.mammoth);
+  const buf = await file.arrayBuffer();
+  const { value } = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+  return cleanProse(htmlToMd(value));
+}
+
+async function convertXlsx(file) {
+  await loadScript(LIBS.xlsx);
+  const buf = await file.arrayBuffer();
+  const wb = window.XLSX.read(buf);
+  const parts = [];
+  for (const name of wb.SheetNames) {
+    const csv = window.XLSX.utils.sheet_to_csv(wb.Sheets[name]).replace(/,+$/gm, "").trim();
+    if (!csv) continue;
+    parts.push(wb.SheetNames.length > 1 ? "[Hoja: " + name + "]\n" + csv : csv);
+  }
+  return parts.join("\n\n");
+}
+
+async function convertCsv(file) {
+  await loadScript(LIBS.papa);
+  const raw = await file.text();
+  const { data } = window.Papa.parse(raw, {
+    header: false, skipEmptyLines: true,
+    delimitersToGuess: [",", ";", "\t", "|"],
+  });
+  if (!data.length) return "";
+  return window.Papa.unparse(data).trim();
+}
+
+async function convertPptx(file) {
+  await loadScript(LIBS.jszip);
+  const buf = await file.arrayBuffer();
+  const zip = await window.JSZip.loadAsync(buf);
+  const num = (p) => parseInt(p.match(/(\d+)\.xml$/)[1], 10);
+  const slides = Object.keys(zip.files)
+    .filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p))
+    .sort((a, b) => num(a) - num(b));
+  if (!slides.length) throw new Error("No se encontraron diapositivas en el archivo.");
+
+  const extractParas = (xml) => {
+    const paras = [];
+    for (const pMatch of xml.split("</a:p>")) {
+      const runs = [];
+      const tRe = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
+      let m;
+      while ((m = tRe.exec(pMatch))) runs.push(decodeEntities(m[1]));
+      const text = runs.join("").replace(/\s+/g, " ").trim();
+      if (text) paras.push(text);
+    }
+    return paras;
+  };
+
+  const parts = [];
+  for (const path of slides) {
+    const n = num(path);
+    const xml = await zip.file(path).async("string");
+    const paras = extractParas(xml);
+    let block = "## Diapositiva " + n;
+    if (paras.length) block += "\n\n" + paras.join("\n");
+
+    const notesPath = "ppt/notesSlides/notesSlide" + n + ".xml";
+    if (zip.file(notesPath)) {
+      const notesXml = await zip.file(notesPath).async("string");
+      const notes = extractParas(notesXml).filter((t) => !/^\d+$/.test(t));
+      if (notes.length) block += "\n\n> Notas: " + notes.join(" ");
+    }
+    parts.push(block);
+  }
+  return collapseWhitespace(parts.join("\n\n"));
+}
+
+/* PDF: extracción página por página, sin límite de tamaño. Reconstruye líneas
+   por posición vertical y detecta saltos de párrafo por el espaciado. */
+async function convertPdf(file, onProgress) {
+  const pdfjsLib = await getPdfjs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    if (onProgress) onProgress(i, pdf.numPages, "Extrayendo texto");
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    const rows = [];
+    for (const it of content.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = it.transform[5];
+      let row = rows.find((r) => Math.abs(r.y - y) <= 2.5);
+      if (!row) { row = { y, parts: [] }; rows.push(row); }
+      row.parts.push({ x: it.transform[4], str: it.str });
+    }
+    rows.sort((a, b) => b.y - a.y);
+
+    const gaps = [];
+    for (let r = 1; r < rows.length; r++) gaps.push(Math.abs(rows[r - 1].y - rows[r].y));
+    gaps.sort((a, b) => a - b);
+    const medGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+
+    const lines = [];
+    rows.forEach((row, idx) => {
+      const text = row.parts.sort((a, b) => a.x - b.x).map((p) => p.str).join(" ").replace(/\s+/g, " ").trim();
+      if (!text) return;
+      if (idx > 0 && medGap > 0 && Math.abs(rows[idx - 1].y - row.y) > medGap * 1.7) lines.push("");
+      lines.push(text);
+    });
+    pages.push(lines.join("\n"));
+    page.cleanup();
+  }
+
+  const totalChars = pages.reduce((s, p) => s + p.length, 0);
+  const scanned = totalChars / pdf.numPages < 40;
+
+  const cleanedPages = stripRepeatedPageLines(pages);
+  const text = cleanProse(cleanedPages.join("\n\n"));
+  return { text, scanned, numPages: pdf.numPages, buf };
+}
+
+async function ocrPdf(buf, onProgress) {
+  const pdfjsLib = await getPdfjs();
+  const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+  const worker = await getOcrWorker();
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    if (onProgress) onProgress(i, pdf.numPages, "OCR local");
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    const { data } = await worker.recognize(canvas);
+    pages.push((data.text || "").trim());
+    page.cleanup();
+    canvas.width = canvas.height = 0;
+  }
+  return cleanProse(stripRepeatedPageLines(pages).join("\n\n"));
+}
+
+async function ocrImage(file) {
+  const worker = await getOcrWorker();
+  const { data } = await worker.recognize(file);
+  return cleanProse(data.text || "");
+}
+
+/* ═══════════════════ Detección de tipo ═══════════════════ */
+
+const EXT_MAP = {
+  docx: "docx", xlsx: "xlsx", xls: "xlsx", xlsm: "xlsx",
+  csv: "csv", tsv: "csv",
+  txt: "text", md: "text", markdown: "text",
+  json: "data", xml: "data", yaml: "data", yml: "data",
+  html: "html", htm: "html",
+  pdf: "pdf", pptx: "pptx",
+  jpg: "image", jpeg: "image", png: "image", webp: "image", gif: "image", bmp: "image",
+};
+const AUDIO_EXTS = new Set(["mp3", "wav", "m4a", "ogg", "oga", "aac", "flac", "weba", "opus", "wma"]);
+const TYPE_LABELS = {
+  docx: "📝 Word", xlsx: "📊 Excel", csv: "📋 CSV", text: "📄 Texto",
+  data: "🗂️ Datos", html: "🌐 HTML", pdf: "📕 PDF", pptx: "📽️ PowerPoint", image: "🖼️ Imagen",
+};
+
+/* ═══════════════════ Estado y UI ═══════════════════ */
+
+const $ = (id) => document.getElementById(id);
+const items = [];
+let idCounter = 0;
+let queue = Promise.resolve();
+
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+
+async function copyText(text, okMsg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMsg || "✓ Copiado al portapapeles");
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); toast(okMsg || "✓ Copiado al portapapeles"); }
+    catch { toast("No se pudo copiar automáticamente"); }
+    ta.remove();
+  }
+}
+
+function downloadMd(text, name) {
+  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name.replace(/\.[^.]+$/, "") + ".md";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function esc(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderItem(item) {
+  let card = document.getElementById("card-" + item.id);
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "card";
+    card.id = "card-" + item.id;
+    $("fileList").appendChild(card);
+  }
+
+  const badge = TYPE_LABELS[item.type] || "📎 Archivo";
+  let statusBadge = "";
+  if (item.status === "done") statusBadge = '<span class="badge b-ok">⚡ Listo · local</span>';
+  else if (item.status === "error") statusBadge = '<span class="badge b-err">✕ Error</span>';
+  else if (item.status === "needs-ocr") statusBadge = '<span class="badge b-warn">🔍 Parece escaneado</span>';
+  else statusBadge = '<span class="badge b-warn">Procesando…</span>';
+
+  let html =
+    '<div class="card-head">' +
+      '<span class="badge b-type">' + badge + '</span>' +
+      '<span class="fname" title="' + esc(item.name) + '">' + esc(item.name) + '</span>' +
+      '<span class="spacer"></span>' + statusBadge +
+      '<button class="icon-btn" data-act="remove" title="Quitar">✕</button>' +
+    '</div>';
+
+  if (item.status === "working") {
+    const pct = item.progress != null ? Math.round(item.progress * 100) : null;
+    html +=
+      '<div class="progress-area">' +
+        '<div class="progress-label">' + esc(item.progressLabel || "Procesando…") + '</div>' +
+        '<div class="bar' + (pct == null ? " indeterminate" : "") + '"><div style="width:' + (pct == null ? 35 : pct) + '%"></div></div>' +
+      '</div>';
+  }
+
+  if (item.status === "error") {
+    html += '<div class="error-box">' + esc(item.error) + '</div>';
+  }
+
+  if (item.status === "needs-ocr") {
+    html +=
+      '<div class="notice-box">Este PDF casi no tiene texto seleccionable — probablemente es un documento escaneado. Puedo leerlo con OCR local (gratis, sin salir de tu compu). Tardará unos segundos por página.</div>' +
+      '<div class="card-actions"><button class="btn btn-warn" data-act="ocr">🔍 Ejecutar OCR local (' + item.numPages + ' pág.)</button></div>';
+  }
+
+  if (item.status === "done") {
+    const tk = estTokens(item.md);
+    html += '<div class="stats">' +
+      '<span class="stat"><b>' + fmt(item.md.length) + '</b> caracteres</span>' +
+      '<span class="stat">~<b>' + fmt(tk) + '</b> tokens para Claude</span>';
+    if (item.rawLength && item.rawLength > item.md.length) {
+      const pct = Math.round(((item.rawLength - item.md.length) / item.rawLength) * 100);
+      if (pct > 3) html += '<span class="stat save">🎯 <b>' + pct + '%</b> de ruido eliminado</span>';
+    }
+    if (item.numPages) html += '<span class="stat"><b>' + item.numPages + '</b> páginas</span>';
+    html += '</div>';
+    html += '<div class="preview">' + esc(item.md.slice(0, 3000)) + (item.md.length > 3000 ? "\n\n[… vista previa recortada — el copiado y la descarga incluyen todo]" : "") + '</div>';
+    html +=
+      '<div class="card-actions">' +
+        '<button class="btn btn-primary" data-act="copy">📋 Copiar Markdown</button>' +
+        '<button class="btn btn-ghost" data-act="download">⬇️ .md</button>' +
+      '</div>';
+  }
+
+  card.innerHTML = html;
+
+  card.querySelectorAll("[data-act]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const act = btn.dataset.act;
+      if (act === "remove") removeItem(item.id);
+      if (act === "copy") copyText(item.md, "✓ Markdown copiado — pegalo en Claude o Notion");
+      if (act === "download") downloadMd(item.md, item.name);
+      if (act === "ocr") runOcrOnItem(item);
+    });
+  });
+
+  updateBulkbar();
+}
+
+function removeItem(id) {
+  const idx = items.findIndex((it) => it.id === id);
+  if (idx >= 0) items.splice(idx, 1);
+  const card = document.getElementById("card-" + id);
+  if (card) card.remove();
+  updateBulkbar();
+}
+
+function updateBulkbar() {
+  const done = items.filter((it) => it.status === "done");
+  $("bulkbar").style.display = done.length >= 2 ? "flex" : "none";
+  $("formatsBox").style.display = items.length ? "none" : "block";
+}
+
+function combinedMd() {
+  return items
+    .filter((it) => it.status === "done")
+    .map((it) => "# " + it.name.replace(/\.[^.]+$/, "") + "\n\n" + it.md)
+    .join("\n\n---\n\n");
+}
+
+/* ═══════════════════ Procesamiento ═══════════════════ */
+
+function enqueueFile(file) {
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const type = EXT_MAP[ext] || (file.type && file.type.startsWith("image/") ? "image" : "unknown");
+  const item = {
+    id: ++idCounter, name: file.name || ("captura-" + idCounter + ".png"),
+    type, status: "working", progressLabel: "En cola…", md: "", error: "",
+  };
+  items.push(item);
+  renderItem(item);
+
+  queue = queue.then(() => processItem(item, file, ext)).catch(() => {});
+}
+
+async function processItem(item, file, ext) {
+  const update = (label, progress) => {
+    item.progressLabel = label;
+    item.progress = progress;
+    renderItem(item);
+  };
+  update("Procesando " + item.name + "…", null);
+
+  try {
+    if (item.type === "unknown") {
+      if (AUDIO_EXTS.has(ext)) throw new Error("Los archivos de audio no se pueden convertir acá: transcribí el audio en otra app (dictado nativo, Otter…) y pegá el texto en la pestaña «📋 Texto crudo».");
+      if (ext === "doc") throw new Error("Los .doc antiguos no son compatibles. Abrilo en Word y guardalo como .docx — ese sí lo convierto al instante.");
+      if (ext === "ppt") throw new Error("Los .ppt antiguos no son compatibles. Abrilo en PowerPoint y guardalo como .pptx — ese sí lo convierto al instante.");
+      throw new Error("Formato ." + ext + " no soportado (todavía).");
+    }
+
+    let md = "", rawLength = null;
+
+    switch (item.type) {
+      case "docx": md = await convertDocx(file); break;
+      case "xlsx": md = await convertXlsx(file); break;
+      case "csv": {
+        const raw = await file.text(); rawLength = raw.length;
+        md = await convertCsv(file); break;
+      }
+      case "text": {
+        const raw = await file.text(); rawLength = raw.length;
+        md = cleanProse(raw); break;
+      }
+      case "data": {
+        const raw = await file.text(); rawLength = raw.length;
+        if (/\.json$/i.test(item.name)) {
+          try { md = JSON.stringify(JSON.parse(raw)); }
+          catch { md = collapseWhitespace(raw); }
+        } else md = collapseWhitespace(raw);
+        break;
+      }
+      case "html": {
+        const raw = await file.text(); rawLength = raw.length;
+        md = cleanProse(htmlToMd(raw)); break;
+      }
+      case "pptx":
+        update("Leyendo diapositivas…", null);
+        md = await convertPptx(file);
+        break;
+      case "pdf": {
+        const res = await convertPdf(file, (cur, total, label) => update(label + " · página " + cur + " de " + total, cur / total));
+        item.numPages = res.numPages;
+        if (res.scanned) {
+          item.status = "needs-ocr";
+          item.pdfBuf = res.buf;
+          renderItem(item);
+          return;
+        }
+        md = res.text;
+        break;
+      }
+      case "image": {
+        update("Leyendo la imagen con OCR local… (la primera vez descarga el modelo, ~20 seg)", null);
+        md = await ocrImage(file);
+        if (!md.trim()) throw new Error("No se detectó texto en la imagen.");
+        break;
+      }
+    }
+
+    if (!md.trim()) throw new Error("El archivo no contiene texto extraíble.");
+    item.md = md;
+    item.rawLength = rawLength;
+    item.status = "done";
+    renderItem(item);
+  } catch (err) {
+    item.status = "error";
+    item.error = (err && err.message) || "Error al convertir el archivo.";
+    renderItem(item);
+  }
+}
+
+async function runOcrOnItem(item) {
+  item.status = "working";
+  item.progressLabel = "Preparando OCR local… (la primera vez descarga el modelo, ~20 seg)";
+  item.progress = null;
+  renderItem(item);
+  try {
+    const md = await ocrPdf(item.pdfBuf, (cur, total, label) => {
+      item.progressLabel = label + " · página " + cur + " de " + total;
+      item.progress = cur / total;
+      renderItem(item);
+    });
+    if (!md.trim()) throw new Error("El OCR no detectó texto legible en este documento.");
+    item.md = md;
+    item.status = "done";
+    item.pdfBuf = null;
+    renderItem(item);
+  } catch (err) {
+    item.status = "error";
+    item.error = (err && err.message) || "Error durante el OCR.";
+    renderItem(item);
+  }
+}
+
+/* ═══════════════════ Eventos: dropzone, paste, tabs ═══════════════════ */
+
+const dz = $("dropzone");
+dz.addEventListener("click", () => $("fileInput").click());
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+dz.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dz.classList.remove("over");
+  [...(e.dataTransfer.files || [])].forEach(enqueueFile);
+});
+$("fileInput").addEventListener("change", (e) => {
+  [...e.target.files].forEach(enqueueFile);
+  e.target.value = "";
+});
+
+window.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData?.items || [])]
+    .filter((it) => it.kind === "file")
+    .map((it) => it.getAsFile())
+    .filter(Boolean);
+  if (!files.length) return;
+  e.preventDefault();
+  switchTab("convert");
+  files.forEach(enqueueFile);
+});
+
+$("copyAllBtn").addEventListener("click", () => copyText(combinedMd(), "✓ Todo copiado — pegalo en Claude o Notion"));
+$("downloadAllBtn").addEventListener("click", () => downloadMd(combinedMd(), "documentos-combinados"));
+$("clearAllBtn").addEventListener("click", () => {
+  items.length = 0;
+  $("fileList").innerHTML = "";
+  updateBulkbar();
+});
+
+/* Tabs */
+function switchTab(id) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === id));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("active", s.id === "tab-" + id));
+}
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+/* ═══════════════════ Texto crudo ═══════════════════ */
+
+$("rawInput").addEventListener("input", () => {
+  const len = $("rawInput").value.length;
+  $("rawCount").textContent = len ? fmt(len) + " caracteres · ~" + fmt(estTokens($("rawInput").value)) + " tokens" : "";
+});
+
+$("cleanBtn").addEventListener("click", () => {
+  const input = $("rawInput").value;
+  if (!input.trim()) { toast("Pegá algo de texto primero"); return; }
+  const cleaned = cleanProse(input);
+  const before = estTokens(input), after = estTokens(cleaned);
+  const pct = before > 0 ? Math.round(((before - after) / before) * 100) : 0;
+
+  let html =
+    '<div class="panel">' +
+      '<div class="panel-head"><span>Texto limpio</span><small>' + fmt(cleaned.length) + ' caracteres · ~' + fmt(after) + ' tokens' +
+      (pct > 3 ? ' · 🎯 ' + pct + '% menos' : '') + '</small></div>' +
+      '<div class="preview" style="margin:12px">' + esc(cleaned.slice(0, 5000)) + (cleaned.length > 5000 ? "\n\n[… vista previa recortada]" : "") + '</div>' +
+      '<div class="card-actions">' +
+        '<button class="btn btn-primary" id="copyRawBtn">📋 Copiar</button>' +
+        '<button class="btn btn-ghost" id="dlRawBtn">⬇️ .md</button>' +
+      '</div>' +
+    '</div>';
+  $("rawResultArea").innerHTML = html;
+  $("copyRawBtn").addEventListener("click", () => copyText(cleaned, "✓ Texto limpio copiado"));
+  $("dlRawBtn").addEventListener("click", () => downloadMd(cleaned, "texto-limpio"));
+});
+
+/* ═══════════════════ Exportar ═══════════════════ */
+
+function renderMdPreview(md) {
+  let h = esc(md);
+  /* tablas */
+  h = h.replace(/((?:^\|.*\|\s*$\n?)+)/gm, (block) => {
+    const rows = block.trim().split("\n").map((r) => r.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+    const body = rows.filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c)));
+    if (body.length < 1) return block;
+    let t = "<table>";
+    body.forEach((r, i) => {
+      const tag = i === 0 ? "th" : "td";
+      t += "<tr>" + r.map((c) => "<" + tag + ">" + c + "</" + tag + ">").join("") + "</tr>";
+    });
+    return t + "</table>";
+  });
+  h = h
+    .replace(/^###### (.+)$/gm, "<h6>$1</h6>")
+    .replace(/^##### (.+)$/gm, "<h5>$1</h5>")
+    .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/^&gt; (.+)$/gm, "<blockquote style='border-left:3px solid var(--border);padding-left:10px;color:var(--muted)'>$1</blockquote>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+    .replace(/^(\d+)\. (.+)$/gm, "<li>$1. $2</li>")
+    .replace(/\n{2,}/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+  h = h.replace(/<\/(h[1-6]|table|blockquote|li)><br>(<br>)?/g, "</$1>");
+  return h;
+}
+
+let exportTimer = null;
+$("exportInput").addEventListener("input", () => {
+  clearTimeout(exportTimer);
+  exportTimer = setTimeout(() => {
+    const md = $("exportInput").value;
+    $("exportPreviewArea").innerHTML = md.trim()
+      ? '<div class="panel"><div class="panel-head"><span>Vista previa</span></div><div class="md-preview">' + renderMdPreview(md) + "</div></div>"
+      : "";
+  }, 250);
+});
+
+$("printBtn").addEventListener("click", () => {
+  const md = $("exportInput").value;
+  if (!md.trim()) { toast("Pegá algo de Markdown primero"); return; }
+  const win = window.open("", "_blank");
+  win.document.write(
+    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>DocFlow Export</title><style>" +
+    "body{font-family:-apple-system,Segoe UI,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1e2333}" +
+    "table{border-collapse:collapse;width:100%;margin:.6em 0}th,td{border:1px solid #c8cde0;padding:6px 10px;text-align:left}th{background:#f0f2fa}" +
+    "code{background:#f0f2fa;padding:1px 5px;border-radius:4px}blockquote{border-left:3px solid #c8cde0;padding-left:10px;color:#666}" +
+    "@media print{body{margin:0}}</style></head><body>" + renderMdPreview(md) + "</body></html>"
+  );
+  win.document.close();
+  setTimeout(() => win.print(), 350);
+});
+
+$("copyExportBtn").addEventListener("click", () => {
+  const md = $("exportInput").value;
+  if (md.trim()) copyText(md, "✓ Markdown copiado");
+});
+$("downloadExportBtn").addEventListener("click", () => {
+  const md = $("exportInput").value;
+  if (md.trim()) downloadMd(md, "documento");
+});
+
+/* ═══════════════════ Tema claro/oscuro ═══════════════════ */
+
+const themeBtn = $("themeBtn");
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  themeBtn.textContent = t === "dark" ? "☀️" : "🌙";
+  try { localStorage.setItem("docflow-theme", t); } catch {}
+}
+themeBtn.addEventListener("click", () =>
+  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")
+);
+try {
+  const saved = localStorage.getItem("docflow-theme");
+  if (saved) applyTheme(saved);
+  else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) applyTheme("dark");
+} catch {}
+</script>
+</body>
+</html>
