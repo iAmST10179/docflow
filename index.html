@@ -232,10 +232,10 @@
     <div class="dropzone" id="dropzone">
       <span class="dz-icon">📂</span>
       <h2>Arrastrá tus archivos o hacé clic para elegir</h2>
-      <p>Podés soltar varios a la vez · PDF · Word · Excel · PowerPoint · Imágenes · HTML · TXT · CSV · JSON</p>
+      <p>Podés soltar varios a la vez · PDF · Word · Excel · PowerPoint · Imágenes · HTML · TXT · CSV · JSON · Email (.msg)</p>
       <span class="dz-hint">📋 También podés pegar una imagen o captura con Ctrl+V / Cmd+V</span>
       <input type="file" id="fileInput" multiple hidden
-        accept=".pdf,.docx,.doc,.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.md,.markdown,.json,.xml,.yaml,.yml,.html,.htm,.pptx,.ppt,.jpg,.jpeg,.png,.webp,.gif,.bmp">
+        accept=".pdf,.docx,.doc,.xlsx,.xls,.xlsm,.csv,.tsv,.txt,.md,.markdown,.json,.xml,.yaml,.yml,.html,.htm,.pptx,.ppt,.jpg,.jpeg,.png,.webp,.gif,.bmp,.msg">
     </div>
 
     <div id="fileList"></div>
@@ -516,6 +516,62 @@ async function convertPptx(file) {
   return collapseWhitespace(parts.join("\n\n"));
 }
 
+/* .msg (Outlook): es un archivo OLE/Compound File binario, no texto plano —
+   por eso no entra por ninguno de los caminos anteriores. Se parsea con
+   @kenjiuno/msgreader (vía esm.sh, que lo empaqueta para el navegador). */
+let _msgReaderCtor = null;
+async function getMsgReaderCtor() {
+  if (!_msgReaderCtor) {
+    const mod = await import("https://esm.sh/@kenjiuno/msgreader@1.28.0");
+    _msgReaderCtor = mod.default;
+  }
+  return _msgReaderCtor;
+}
+
+const RECIP_TYPE_LABEL = { 1: "Para", 2: "CC", 3: "CCO" };
+
+function fmtMsgRecipients(recipients) {
+  const looksLikeEmail = (s) => !!s && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s);
+  const groups = {};
+  for (const r of recipients || []) {
+    const label = RECIP_TYPE_LABEL[r.recipType] || "Para";
+    (groups[label] || (groups[label] = [])).push(r.name || (looksLikeEmail(r.email) ? r.email : ""));
+  }
+  return Object.entries(groups)
+    .filter(([, list]) => list.length)
+    .map(([label, list]) => "**" + label + ":** " + list.filter(Boolean).join(", "));
+}
+
+async function convertMsg(file) {
+  const MsgReader = await getMsgReaderCtor();
+  const buf = await file.arrayBuffer();
+  const reader = new MsgReader(new Uint8Array(buf));
+  const data = reader.getFileData();
+  if (!data || data.error) throw new Error("No se pudo leer el archivo .msg (¿está dañado o no es un correo de Outlook?).");
+
+  const looksLikeEmail = (s) => !!s && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s);
+
+  const head = [];
+  if (data.subject) head.push("# " + data.subject);
+  if (data.senderName || looksLikeEmail(data.senderEmail)) {
+    head.push("**De:** " + [data.senderName, looksLikeEmail(data.senderEmail) ? "<" + data.senderEmail + ">" : ""].filter(Boolean).join(" "));
+  }
+  head.push(...fmtMsgRecipients(data.recipients));
+  const date = data.messageDeliveryTime || data.clientSubmitTime;
+  if (date) head.push("**Fecha:** " + date);
+
+  let body = (data.body || "").replace(/\r\n?/g, "\n").trim();
+  if (!body && data.bodyHTML) body = htmlToMd(data.bodyHTML);
+  body = cleanProse(body) || "*(sin contenido de texto)*";
+
+  const parts = [head.join("  \n"), "---", body];
+  if (data.attachments && data.attachments.length) {
+    const names = data.attachments.map((a) => a.fileName || a.fileNameShort).filter(Boolean);
+    if (names.length) parts.push("**Adjuntos:** " + names.join(", "));
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
 /* PDF: extracción página por página, sin límite de tamaño. Reconstruye líneas
    por posición vertical y detecta saltos de párrafo por el espaciado. */
 async function convertPdf(file, onProgress) {
@@ -600,11 +656,13 @@ const EXT_MAP = {
   html: "html", htm: "html",
   pdf: "pdf", pptx: "pptx",
   jpg: "image", jpeg: "image", png: "image", webp: "image", gif: "image", bmp: "image",
+  msg: "msg",
 };
 const AUDIO_EXTS = new Set(["mp3", "wav", "m4a", "ogg", "oga", "aac", "flac", "weba", "opus", "wma"]);
 const TYPE_LABELS = {
   docx: "📝 Word", xlsx: "📊 Excel", csv: "📋 CSV", text: "📄 Texto",
   data: "🗂️ Datos", html: "🌐 HTML", pdf: "📕 PDF", pptx: "📽️ PowerPoint", image: "🖼️ Imagen",
+  msg: "✉️ Email (.msg)",
 };
 
 /* ═══════════════════ Estado y UI ═══════════════════ */
@@ -809,6 +867,10 @@ async function processItem(item, file, ext) {
       case "pptx":
         update("Leyendo diapositivas…", null);
         md = await convertPptx(file);
+        break;
+      case "msg":
+        update("Leyendo el correo…", null);
+        md = await convertMsg(file);
         break;
       case "pdf": {
         const res = await convertPdf(file, (cur, total, label) => update(label + " · página " + cur + " de " + total, cur / total));
