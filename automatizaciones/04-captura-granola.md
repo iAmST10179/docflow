@@ -128,9 +128,15 @@ Un seguimiento sí es tarea de Stu cuando **él** tiene que perseguirlo, y se no
 `🔄 Preguntarle a [nombre] por [qué]` — nunca `[Nombre] debe entregar X`, que es la tarea de otro
 disfrazada.
 
+⚠️ **Las tareas se crean con `template_id` = `1d8cfa779979439398943bfaf13c9314`.** La plantilla por
+defecto de Tareas **no se aplica sola** al crear por API: la página nace en blanco y sin la
+**Bitácora de seguimientos** (`Follow up #1 / #2 / #3`), que desde el 31 jul 2026 es el método de
+seguimiento de Stu. Sin ella, la tarea no tiene dónde registrar los toques.
+
 Campos: `Estado` = `Por hacer` · `Contexto` = `Trabajo` (o `Personal` según perfil) ·
 `Evento` = el evento de Agenda de esta reunión · `Area` y `Proyecto` cuando estén claros, ❓ si no ·
 `Prioridad` y `Fecha` de lo que se dijo, nunca inventadas.
+`Origen` = `Whagons` o `Compras` si la tarea es mantenimiento o compra del Thermal Resort.
 
 Filtro de supervivencia: lo que se resolvió durante la llamada no genera tarea. Sólo lo que sigue vivo.
 
