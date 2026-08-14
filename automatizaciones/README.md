@@ -13,6 +13,7 @@ Corren en servidor: da igual si la computadora está apagada.
 | [Briefing Nocturno](02-briefing-nocturno.md) | 9:03 PM diario | `3 3 * * *` | No — sólo lee |
 | [Revisión Semanal](03-revision-semanal.md) | Domingo 6:13 PM | `13 0 * * 1` | Sólo lo reversible |
 | [Captura Granola](04-captura-granola.md) | 1:37 PM y 8:37 PM | `37 2,19 * * *` | Sí — eventos y tareas |
+| [Asistente Ejecutivo](05-asistente-ejecutivo.md) | 8:47 AM, 2:47 PM, 9:47 PM | `47 3,14,20 * * *` | Sí — ejecuta tus respuestas |
 
 Costa Rica es GMT-6 todo el año. El cron va en UTC: se le suman 6 horas a la hora local.
 La semanal cae domingo 6:13 PM local, que en UTC ya es lunes 00:13 — por eso el día de semana del
@@ -30,14 +31,30 @@ adjuntarlos a mano una sola vez:
 1. Entrar a claude.ai → Routines
 2. Por cada una de las cuatro, habilitar los conectores que usa:
 
-| Routine | Conectores |
-|---|---|
-| Briefing Matutino | Notion · Google Calendar · Gmail |
-| Briefing Nocturno | Notion · Google Calendar |
-| Revisión Semanal | Notion · Google Calendar · Gmail |
-| Captura Granola | Notion · Granola |
+| Routine | Conectores | Estado |
+|---|---|---|
+| Briefing Matutino | Notion · Google Calendar · Gmail | ✅ conectada |
+| Briefing Nocturno | Notion · Google Calendar | ✅ conectada |
+| Revisión Semanal | Notion · Google Calendar · Gmail | ✅ conectada |
+| Captura Granola | Notion · Granola | ✅ conectada |
+| **Asistente Ejecutivo** | **Notion** | ⚠️ **pendiente** |
 
-Sin esto la Routine dispara, no encuentra las herramientas y no hace nada.
+Sin esto la Routine dispara, no encuentra las herramientas y no hace nada — y no falla ruidoso.
+
+Actualizar el prompt de una Routine por API **no borra sus conectores**: se conservan. Sólo hay que
+adjuntarlos una vez, cuando la Routine nace.
+
+## La capa interactiva
+
+Dos piezas nuevas en Notion, colgadas del **Centro de Operaciones** como sección 0:
+
+- **Bandeja de decisiones** (`8b31a8cb-…`) — el único lugar donde Stu decide. Una fila por pregunta,
+  con el contexto necesario para resolverla sin ir a buscar. Responde el select, el asistente ejecuta.
+- **Estado del sistema** (`3bc82178-…`) — la memoria. A quién le espera qué, frentes vivos, decisiones
+  ya tomadas, patrones y ruido conocido. Se lee al arrancar y se reescribe al terminar.
+
+El matutino y la semanal **cuentan** lo pendiente pero no lo listan. Una sola superficie de decisión:
+repetir las preguntas en tres lugares es pedirle a Stu que decida tres veces.
 
 ## Cambios de esquema en Notion
 
