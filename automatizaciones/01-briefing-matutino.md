@@ -22,9 +22,14 @@ Por cada tarea, según su contador `Arrastres`:
 
 Una tarea que se arrastró tres veces no se limpia moviéndola una cuarta. Se congela y se decide.
 
-**Autorreparación:** si una tarea tiene `Arrastres > 0` y su `Fecha` es hoy o futura, Stu la
-reactivó por su cuenta → poner `Arrastres = 0`. El contador mide rescates de la automatización,
-no su trabajo.
+**Autorreparación** (consulta aparte): tareas con `Arrastres > 0` cuya `Fecha` sea **estrictamente
+posterior a hoy** → `Arrastres = 0`. Stu la reagendó por su cuenta y el contador arranca de nuevo.
+El contador mide rescates de la automatización, no su trabajo.
+
+⚠️ **Estrictamente posterior, nunca "hoy o futura".** Esta misma automatización deja las atrasadas
+en HOY: si "hoy" entrara en la regla, una segunda corrida el mismo día borraría los contadores que
+la primera acaba de poner, y el arrastre volvería a ser invisible. El bug estuvo en la primera
+versión y se corrigió el 14 ago 2026.
 
 Las tareas en `Estado = En espera` se mueven igual, pero no suben el contador: no dependen de él.
 
