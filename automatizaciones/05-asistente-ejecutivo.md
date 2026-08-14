@@ -76,20 +76,30 @@ parálisis que ya tenía, sólo que en otro lugar. Prioridad:
 El campo `Contexto` es lo que hace que esto sirva. Una pregunta sin contexto obliga a abrir la
 tarea, y ahí ya se perdió el tiempo que se le quería ahorrar.
 
-## PASO D — Reescribir la memoria
+## PASO E — Mandar el correo, **antes** de tocar la memoria
+
+El correo es el producto. La memoria es contabilidad interna.
+
+Este orden se corrigió el 14 ago después de una corrida real: el asistente ejecutó 12 decisiones,
+escribió 12 bitácoras y creó 7 preguntas nuevas — y **nunca mandó el correo**, porque estaba como
+último paso y la corrida se quedó sin aire antes de llegar. Stu se enteró de todo entrando a Notion,
+que es exactamente lo que este sistema existe para evitar.
+
+La regla queda escrita como contrato al inicio del prompt: *la corrida no está completa sin el
+correo; si sólo se puede hacer uno de los dos, se hace el correo.*
+
+Secciones: cómo responder · EJECUTADO · NECESITA TU DECISIÓN · CLASIFICACIÓN A REVISAR ·
+HICE SIN MOLESTARTE · NO PUDE · link. Máx 400 palabras, texto plano.
+
+**CLASIFICACIÓN A REVISAR** salió de un caso real: Stu respondió *"sigue igual"* a una tarea y
+agregó en la nota que **no debería estar en "En espera"** porque nadie había pedido nada todavía.
+El asistente registró la nota pero dejó el estado mal puesto. Ahora esas contradicciones se listan
+para que él las corrija — no las arregla por su cuenta, porque el estado correcto es decisión suya.
+
+## PASO F — Reescribir la memoria (último, sacrificable)
 
 Tabla de esperas, frentes activos (máx 5), decisiones nuevas, patrones con evidencia, ruido conocido.
 Es la foto de **ahora**. Si la página pasa de dos pantallas, está mal: se corta.
-
-## PASO E — Ficha (máx 100 palabras)
-
-```
-🤖 [N] respuestas ejecutadas · [N] preguntas nuevas
-
-✅ [lo que se ejecutó]
-❓ [lo más urgente esperando respuesta]
-👀 [una observación, sólo con evidencia real]
-```
 
 ---
 
