@@ -33,16 +33,65 @@ adjuntarlos a mano una sola vez:
 
 | Routine | Conectores | Estado |
 |---|---|---|
-| Briefing Matutino | Notion · Google Calendar · Gmail | ✅ conectada |
-| Briefing Nocturno | Notion · Google Calendar | ✅ conectada |
-| Revisión Semanal | Notion · Google Calendar · Gmail | ✅ conectada |
-| Captura Granola | Notion · Granola | ✅ conectada |
-| **Asistente Ejecutivo** | **Notion** | ⚠️ **pendiente** |
+| Briefing Matutino | Notion · Calendar · Gmail | ✅ |
+| Briefing Nocturno | Notion · Calendar | ✅ |
+| Revisión Semanal | Notion · Calendar · Gmail | ✅ |
+| Asistente Ejecutivo | Notion · Gmail | ✅ |
+| **Captura Granola** | Notion · Granola · Calendar | ⚠️ **le falta Gmail** |
 
 Sin esto la Routine dispara, no encuentra las herramientas y no hace nada — y no falla ruidoso.
 
+**Gmail pasa de sólo-lectura a lectura + envío.** La convención vieja del sistema decía "Gmail y
+GCal son sólo lectura"; desde el 14 ago Gmail se usa además para mandar los reportes y leer las
+respuestas de Stu. Google Calendar sigue siendo sólo lectura.
+
+## Permisos: por qué se traban algunas corridas
+
+Una Routine disparada **por horario** corre sola sin pedir nada. Una disparada **a mano**
+(`fire_trigger`) queda en `SESSION_STATUS_REQUIRES_ACTION` esperando aprobación en su primera
+llamada a un conector, y ahí se queda para siempre.
+
+Verificado el 14 ago: el Asistente Ejecutivo corrió dos veces por horario y completó las dos; el
+Briefing Matutino disparado a mano quedó bloqueado en `Notion-Fetch`. **Conclusión operativa: no
+disparar Routines a mano.** Si hace falta correr una fuera de horario, conviene mover su cron.
+
 Actualizar el prompt de una Routine por API **no borra sus conectores**: se conservan. Sólo hay que
 adjuntarlos una vez, cuando la Routine nace.
+
+## El canal: correo, no chat
+
+El problema real no era que las automatizaciones no corrieran — era que **su salida vivía en una
+transcripción de sesión que Stu tenía que ir a abrir**. Las notificaciones push tampoco llegaban,
+porque sólo se disparan cuando la corrida termina, y las que quedaban trabadas en un permiso nunca
+terminaban.
+
+Desde el 14 ago cada automatización **manda su reporte por correo** a `stuarthrm@gmail.com`, y Stu
+**responde ese mismo correo** para decidir:
+
+```
+DEC-4 archivar
+DEC-7 reagendar viernes
+DEC-9 delegué a Fercho
+```
+
+El Asistente Ejecutivo lee la respuesta en su siguiente corrida, la escribe en la Bandeja y la
+ejecuta en Notion. Cero fricción: no hay que abrir Notion ni el chat.
+
+**`Código` (DEC-N)** es un `UNIQUE_ID` de la Bandeja. Es estable y no cambia nunca — por eso la
+respuesta se puede mapear sin ambigüedad, cosa que una numeración por correo no permitiría.
+
+### Volumen de correo, a propósito bajo
+
+| Automatización | Manda correo |
+|---|---|
+| Briefing Matutino | Siempre — es el briefing del día |
+| Asistente Ejecutivo | Siempre, aunque sea de tres líneas |
+| Revisión Semanal | Siempre, domingos |
+| Captura Granola | **Sólo si procesó una reunión nueva**, o si algo falló |
+| Briefing Nocturno | Nunca — es una lectura de 10 segundos, va sólo por push |
+
+Típicamente dos correos por día. El silencio nunca es una opción cuando algo falla: un reporte que
+no llega no distingue entre "no pasó nada" y "me rompí".
 
 ## La capa interactiva
 
