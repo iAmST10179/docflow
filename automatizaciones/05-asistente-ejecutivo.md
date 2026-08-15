@@ -113,3 +113,19 @@ Es la foto de **ahora**. Si la página pasa de dos pantallas, está mal: se cort
 - Tareas nuevas con `template_id` `1d8cfa779979439398943bfaf13c9314`, o nacen sin Bitácora.
 - Una sola superficie de decisión: el matutino y la semanal **cuentan** las pendientes, no las listan.
   Repetirlas es pedirle a Stu que decida dos veces.
+
+---
+
+## Dos fallos reales y cómo quedaron cerrados
+
+**14 ago — filas cerradas sin ejecutar.** Una corrida marcó 12 filas de la Bandeja como `Listo`
+sin que la decisión bajara nunca a la tarea: seguían en `En espera`, sin Bitácora. La corrida
+siguiente lo detectó y las cerró todas. Quedó blindado: `Estado` = Listo **sólo después de
+verificar con fetch** que la tarea cambió, y el PASO C revisa también las filas ya marcadas Listo
+por si alguna quedó a medias. Una fila cerrada sin ejecutar es peor que una abierta — Stu cree que
+se hizo y nadie vuelve a mirarla.
+
+**14 ago — falso positivo de mi parte.** Reporté que el asistente no había mandado el correo. Sí lo
+había mandado: revisé dos veces mientras la corrida seguía en curso y el envío llegó minutos
+después. Una corrida completa tarda alrededor de media hora entre que dispara y que manda el
+correo — verificar antes de eso no prueba nada.
