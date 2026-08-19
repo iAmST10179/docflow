@@ -214,8 +214,8 @@
     <div class="brand">
       <div class="logo">df</div>
       <div>
-        <h1>DocFlow <span style="font-size:12px;color:var(--muted);font-weight:600">v3</span></h1>
-        <p>Cualquier archivo → Markdown limpio · 100% local, sin límites</p>
+        <h1>DocFlow <span style="font-size:12px;color:var(--muted);font-weight:600">v4</span></h1>
+        <p>Cualquier archivo → Markdown estructurado · 100% local, sin límites</p>
       </div>
     </div>
     <button class="theme-btn" id="themeBtn" title="Cambiar tema">🌙</button>
@@ -286,7 +286,7 @@
   <footer>
     <p>🔒 Conversión 100% local: tus archivos nunca salen de tu dispositivo.</p>
     <p>Necesita internet solo la primera vez que abrís la página (para cargar las librerías, que quedan en caché).</p>
-    <p style="margin-top:6px">DocFlow v3 · hecho para el flujo de trabajo de Stu ⚙️</p>
+    <p style="margin-top:6px">DocFlow v4 · hecho para el flujo de trabajo de Stu ⚙️</p>
   </footer>
 </div>
 
@@ -552,24 +552,75 @@ async function convertDocx(file) {
    antes) desalinea filas entre sí. Acá solo se recorta cuando el mismo número
    de columnas vacías se repite al final de TODAS las filas (es decir, una
    columna fantasma real, no un dato vacío puntual). */
-function stripUniformTrailingEmptyColumns(csv) {
-  const lines = csv.split("\n").filter((l) => l.length);
-  if (!lines.length) return csv;
-  const trailingCommaRuns = lines.map((l) => (l.match(/,+$/) || [""])[0].length);
-  const stripLen = Math.min(...trailingCommaRuns);
-  if (stripLen === 0) return csv;
-  return lines.map((l) => l.slice(0, l.length - stripLen)).join("\n");
+/* Una hoja de cálculo se entrega como TABLA Markdown, no como CSV. Antes salía
+   texto separado por comas: técnicamente el mismo dato, pero pegado en Notion
+   es un muro de comas, y leído por Claude se paga en tokens una estructura que
+   igual hay que reconstruir. */
+
+function mdCell(v) {
+  return String(v == null ? "" : v)
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|")
+    .trim();
+}
+
+/* Recorta filas y columnas vacías del borde: las hojas de cálculo casi siempre
+   traen relleno a la derecha y abajo. */
+function trimGrid(rows) {
+  let grid = rows.map((r) => (r || []).map(mdCell));
+  while (grid.length && grid[grid.length - 1].every((c) => !c)) grid.pop();
+  while (grid.length && grid[0].every((c) => !c)) grid.shift();
+  if (!grid.length) return [];
+  const width = Math.max(...grid.map((r) => r.length));
+  grid = grid.map((r) => { const c = r.slice(); while (c.length < width) c.push(""); return c; });
+  let last = width - 1;
+  while (last >= 0 && grid.every((r) => !r[last])) last--;
+  return grid.map((r) => r.slice(0, last + 1));
+}
+
+function gridToMd(rows) {
+  const grid = trimGrid(rows);
+  if (!grid.length) return "";
+
+  /* Las hojas reales empiezan con un título y a veces una fila en blanco antes
+     de los encabezados. Esas filas de una sola celda se sacan como texto: si se
+     dejaran, la primera de ellas terminaría siendo el encabezado de la tabla y
+     todas las columnas quedarían mal rotuladas. */
+  const lead = [];
+  while (grid.length && grid[0].filter(Boolean).length <= 1) {
+    const only = grid.shift().find(Boolean);
+    if (only) lead.push(only);
+  }
+  if (!grid.length) return lead.join("\n\n");
+
+  const width = grid[0].length;
+  if (width < 2) {
+    return lead.concat(grid.map((r) => r[0]).filter(Boolean)).join("\n\n");
+  }
+
+  const head = grid[0].map((c, i) => c || "Columna " + (i + 1));
+  const out = [
+    "| " + head.join(" | ") + " |",
+    "| " + head.map(() => "---").join(" | ") + " |",
+    ...grid.slice(1).map((r) => "| " + r.join(" | ") + " |"),
+  ];
+  return lead.concat(out.join("\n")).join("\n\n");
 }
 
 async function convertXlsx(file) {
   await loadScript(LIBS.xlsx);
   const buf = await file.arrayBuffer();
-  const wb = window.XLSX.read(buf);
+  const wb = window.XLSX.read(buf, { cellDates: true });
   const parts = [];
   for (const name of wb.SheetNames) {
-    const csv = stripUniformTrailingEmptyColumns(window.XLSX.utils.sheet_to_csv(wb.Sheets[name])).trim();
-    if (!csv) continue;
-    parts.push(wb.SheetNames.length > 1 ? "[Hoja: " + name + "]\n" + csv : csv);
+    const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[name], {
+      header: 1, raw: false, defval: "", blankrows: false,
+    });
+    const md = gridToMd(rows);
+    if (!md) continue;
+    /* Con varias hojas, cada una es una sección: así el Markdown conserva de
+       dónde salió cada tabla. */
+    parts.push(wb.SheetNames.length > 1 ? "## " + name + "\n\n" + md : md);
   }
   return parts.join("\n\n");
 }
@@ -582,7 +633,7 @@ async function convertCsv(file) {
     delimitersToGuess: [",", ";", "\t", "|"],
   });
   if (!data.length) return "";
-  return window.Papa.unparse(data).trim();
+  return gridToMd(data);
 }
 
 async function convertPptx(file) {
@@ -694,98 +745,706 @@ async function convertMsg(file) {
   return parts.filter(Boolean).join("\n\n");
 }
 
-/* PDF: extracción página por página, sin límite de tamaño. Reconstruye líneas
-   por posición vertical y detecta saltos de párrafo por el espaciado. */
-/* Agrupa los items de una página en columnas de lectura (izquierda a derecha)
-   antes de reconstruir líneas. Sin esto, un PDF de dos columnas reales
-   (común en contratos/publicaciones) mezclaba palabras de columnas distintas
-   en una sola línea por compartir la misma altura "y". Solo separa columnas
-   cuando hay un vacío vertical ancho Y con varias filas independientes a cada
-   lado — un dato suelto (ej. una nota al margen) no alcanza para dispararlo,
-   así que un documento de una sola columna se comporta exactamente igual que
-   antes. */
-function splitIntoColumns(items) {
-  const valid = items.filter((it) => it.str && it.str.trim());
-  if (valid.length < 4) return [valid];
-  const spans = valid.map((it) => [it.transform[4], it.transform[4] + (it.width || 0)]);
-  const minX = Math.min(...spans.map((s) => s[0]));
-  const maxX = Math.max(...spans.map((s) => s[1]));
-  const pageWidth = maxX - minX;
-  if (pageWidth <= 0) return [valid];
+/* ═══════════════════ PDF → Markdown estructurado ═══════════════════ */
+/* La extracción de un PDF tiene dos problemas distintos y hay que resolverlos
+   en orden. Primero el ORDEN DE LECTURA: el flujo interno del PDF no viene en
+   el orden en que uno lee la página, así que hay que reconstruir la geometría.
+   Después la ESTRUCTURA: qué era un título, qué una lista, qué una tabla, que
+   es lo único que hace que el Markdown sirva para algo del otro lado.
 
-  const BUCKETS = 120;
-  const bucketWidth = pageWidth / BUCKETS;
-  const occupied = new Array(BUCKETS).fill(false);
-  for (const [x0, x1] of spans) {
-    const b0 = Math.max(0, Math.floor((x0 - minX) / bucketWidth));
-    const b1 = Math.min(BUCKETS - 1, Math.floor((x1 - minX) / bucketWidth));
-    for (let b = b0; b <= b1; b++) occupied[b] = true;
-  }
+   La versión anterior resolvía el primero a medias (decidía UNA vez si toda la
+   página era de dos columnas) y el segundo nada (todo salía como párrafos
+   sueltos, un renglón por línea visual). */
 
-  let bestStart = -1, bestLen = 0, curStart = -1;
-  for (let b = 0; b < BUCKETS; b++) {
-    if (!occupied[b]) {
-      if (curStart === -1) curStart = b;
-    } else {
-      if (curStart !== -1) {
-        const len = b - curStart;
-        if (curStart > 0 && len > bestLen) { bestLen = len; bestStart = curStart; }
-        curStart = -1;
-      }
-    }
-  }
-  const gutterWidth = bestLen * bucketWidth;
-  if (bestStart === -1 || gutterWidth < 18 || gutterWidth / pageWidth < 0.04) return [valid];
+const BOLD_FONT_RE = /(bold|black|heavy|semib|demib|extrab|ultrab|[-_,]bd\b)/i;
+const ITALIC_FONT_RE = /(italic|oblique|[-_,]it\b)/i;
 
-  const splitX = minX + (bestStart + bestLen / 2) * bucketWidth;
-  const left = valid.filter((it) => it.transform[4] < splitX);
-  const right = valid.filter((it) => it.transform[4] >= splitX);
-  if (!left.length || !right.length) return [valid];
+/* Caracteres que no representan texto real: control C0/C1, área de uso privado
+   y el carácter de reemplazo. Aparecen cuando la fuente trae glifos sin mapeo
+   Unicode — ligaduras y alternativas tipográficas de fuentes script, típicas de
+   los menús y las piezas de diseño — y lo que sobrevive parecen palabras pero
+   no lo son. */
+const JUNK_RE = new RegExp(
+  "[\u0000-\u0008\u000B\u000C\u000E-\u001F"
+  + "\u007F-\u009F\uE000-\uF8FF\uFFFD]", "g");
+const LIGATURE_MAP = [
+  [/\uFB00/g, "ff"], [/\uFB01/g, "fi"], [/\uFB02/g, "fl"],
+  [/\uFB03/g, "ffi"], [/\uFB04/g, "ffl"], [/\uFB05|\uFB06/g, "st"],
+];
+/* Por encima de este porcentaje de glifos sin mapear, el resto ya no es texto:
+   es ruido con forma de contenido. Mejor decirlo que fingirlo. */
+const JUNK_LIMIT = 0.4;
+const JUNK_MARK = "[ilegible]";
 
-  const distinctRows = (arr) => {
-    const ys = [];
-    for (const it of arr) {
-      const y = it.transform[5];
-      if (!ys.some((r) => Math.abs(r - y) <= 2.5)) ys.push(y);
-    }
-    return ys.length;
-  };
-  const totalRows = distinctRows(valid);
-  const leftRows = distinctRows(left);
-  const rightRows = distinctRows(right);
-  if (leftRows < 3 || rightRows < 3) return [valid];
-  if (leftRows / totalRows < 0.25 || rightRows / totalRows < 0.25) return [valid];
+const median = (a) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
 
-  return [left, right];
+function junkRatio(s) {
+  if (!s) return 0;
+  return (s.match(JUNK_RE) || []).length / s.length;
 }
 
-function reconstructColumnText(items) {
+function cleanStr(s) {
+  let out = (s || "").replace(JUNK_RE, "");
+  for (const [re, rep] of LIGATURE_MAP) out = out.replace(re, rep);
+  return out.replace(/\u00A0/g, " ");
+}
+
+function itemText(it) {
+  if ((it.junk || 0) > JUNK_LIMIT) return JUNK_MARK;
+  return cleanStr(it.str);
+}
+
+/* ── Bandas vacías en una proyección ──────────────────────────────────── */
+function emptyRuns(spans, lo, hi, res) {
+  const n = Math.max(1, Math.ceil((hi - lo) / res));
+  const occ = new Uint8Array(n);
+  for (const [a, b] of spans) {
+    let i0 = Math.floor((a - lo) / res), i1 = Math.ceil((b - lo) / res);
+    if (i1 <= 0 || i0 >= n) continue;
+    i0 = Math.max(0, i0); i1 = Math.min(n, i1);
+    for (let i = i0; i < i1; i++) occ[i] = 1;
+  }
+  const runs = [];
+  let start = -1;
+  for (let i = 0; i < n; i++) {
+    if (!occ[i]) { if (start === -1) start = i; }
+    else if (start !== -1) { runs.push([lo + start * res, lo + i * res]); start = -1; }
+  }
+  return runs;
+}
+
+/* ── Items → filas ────────────────────────────────────────────────────── */
+function toRows(items) {
+  const medSize = median(items.map((i) => i.size)) || 10;
+  const tol = Math.max(1.2, medSize * 0.45);
+  const sorted = [...items].sort((a, b) => a.y - b.y || a.x0 - b.x0);
   const rows = [];
-  for (const it of items) {
-    const y = it.transform[5];
-    let row = rows.find((r) => Math.abs(r.y - y) <= 2.5);
-    if (!row) { row = { y, parts: [] }; rows.push(row); }
-    row.parts.push({ x: it.transform[4], str: it.str });
+  for (const it of sorted) {
+    const r = rows[rows.length - 1];
+    if (r && Math.abs(it.y - r.anchor) <= tol) r.items.push(it);
+    else rows.push({ anchor: it.y, items: [it] });
   }
-  rows.sort((a, b) => b.y - a.y);
-
-  const gaps = [];
-  for (let r = 1; r < rows.length; r++) gaps.push(Math.abs(rows[r - 1].y - rows[r].y));
-  gaps.sort((a, b) => a - b);
-  const medGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
-
-  const lines = [];
-  rows.forEach((row, idx) => {
-    const text = row.parts.sort((a, b) => a.x - b.x).map((p) => p.str).join(" ").replace(/\s+/g, " ").trim();
-    if (!text) return;
-    if (idx > 0 && medGap > 0 && Math.abs(rows[idx - 1].y - row.y) > medGap * 1.7) lines.push("");
-    lines.push(text);
-  });
-  return lines.join("\n");
+  for (const r of rows) r.items.sort((a, b) => a.x0 - b.x0);
+  return rows;
 }
 
-function reconstructPageText(items) {
-  return splitIntoColumns(items).map(reconstructColumnText).join("\n\n");
+/* ── XY-cut recursivo ─────────────────────────────────────────────────── */
+/* El corazón del arreglo. En vez de decidir UNA vez si la página entera es de
+   dos columnas, se parte en regiones recursivamente: primero por bandas
+   horizontales vacías (bloques), luego por canales verticales (columnas), y
+   se repite dentro de cada región. Así una página mixta —encabezado a todo lo
+   ancho, cuerpo a dos columnas, pie a todo lo ancho— se resuelve bien, que es
+   exactamente lo que una detección global de columnas no puede hacer: en esa
+   página no existe ningún canal vertical que la cruce entera, así que la
+   detección global se rendía y devolvía todo mezclado por altura. */
+function segment(items, depth) {
+  depth = depth || 0;
+  if (items.length < 2 || depth > 14) return [items];
+
+  const medSize = median(items.map((i) => i.size)) || 10;
+  const res = Math.max(0.5, medSize / 12);
+
+  /* El umbral se calibra contra el interlineado REAL de la región (no contra
+     los huecos que uno encuentra, que sería circular): así un documento a doble
+     espacio no se parte en cada renglón, y uno compacto sí separa bloques. */
+  const rowAnchors = toRows(items).map((r) => r.anchor);
+  const deltas = [];
+  for (let i = 1; i < rowAnchors.length; i++) deltas.push(rowAnchors[i] - rowAnchors[i - 1]);
+  const medDelta = median(deltas.filter((d) => d > 0)) || medSize * 1.25;
+
+  const vSpans = items.map((i) => [i.top, i.bottom]);
+  const yLo = Math.min(...vSpans.map((s) => s[0]));
+  const yHi = Math.max(...vSpans.map((s) => s[1]));
+  const hRuns = emptyRuns(vSpans, yLo, yHi, res)
+    .filter((r) => r[0] > yLo + 0.01 && r[1] < yHi - 0.01);
+
+  let hCut = null;
+  if (hRuns.length) {
+    const thr = Math.max(medDelta * 0.8, medSize * 0.6);
+    let best = null;
+    for (const r of hRuns) {
+      if (r[1] - r[0] >= thr && (!best || r[1] - r[0] > best[1] - best[0])) best = r;
+    }
+    if (best) hCut = { at: (best[0] + best[1]) / 2, gap: best[1] - best[0], span: yHi - yLo };
+  }
+
+  const hSpans = items.map((i) => [i.x0, i.x1]);
+  const xLo = Math.min(...hSpans.map((s) => s[0]));
+  const xHi = Math.max(...hSpans.map((s) => s[1]));
+  const vRuns = emptyRuns(hSpans, xLo, xHi, res)
+    .filter((r) => r[0] > xLo + 0.01 && r[1] < xHi - 0.01);
+
+  let vCut = null;
+  /* Dos guardas antes de cortar en vertical:
+
+     1. Una sola línea nunca es un layout de dos columnas: los huecos anchos de
+        una línea suelta (íconos, tabulaciones, texto espaciado) no son un canal
+        entre columnas. Sin esto, "Alérgenos: Pescado Lácteos Frutos Secos" se
+        partía en cuatro bloques.
+
+     2. Una TABLA tampoco es un layout de dos columnas, y es el error más caro:
+        los huecos entre columnas de una tabla son más anchos que el
+        interlineado, así que el corte vertical se las lleva de encuentro y
+        devuelve las columnas una tras otra —los conceptos primero, las
+        cantidades después, los montos al final—. Ahí es donde una cotización o
+        un PDF exportado de Excel se vuelven ilegibles. */
+  if (vRuns.length && xHi - xLo > 0 && rowAnchors.length >= 2 && !looksTabular(toRows(items))) {
+    const thr = Math.max(medSize * 1.2, (xHi - xLo) * 0.035);
+    let best = null;
+    for (const r of vRuns) {
+      if (r[1] - r[0] >= thr && (!best || r[1] - r[0] > best[1] - best[0])) best = r;
+    }
+    if (best) {
+      const at = (best[0] + best[1]) / 2;
+      const L = items.filter((i) => i.x1 <= at), R = items.filter((i) => i.x1 > at);
+      if (L.length && R.length) vCut = { at, gap: best[1] - best[0], span: xHi - xLo, L, R };
+    }
+  }
+
+  /* Gana el corte con el hueco más grande en proporción a la región; con
+     empate gana el horizontal, que preserva el orden de lectura. */
+  const hScore = hCut ? hCut.gap / hCut.span : 0;
+  const vScore = vCut ? vCut.gap / vCut.span : 0;
+
+  const cutH = () => {
+    const A = items.filter((i) => i.bottom <= hCut.at);
+    const B = items.filter((i) => i.bottom > hCut.at);
+    return A.length && B.length ? [...segment(A, depth + 1), ...segment(B, depth + 1)] : null;
+  };
+
+  if (hCut && hScore >= vScore) { const r = cutH(); if (r) return r; }
+  if (vCut) return [...segment(vCut.L, depth + 1), ...segment(vCut.R, depth + 1)];
+  if (hCut) { const r = cutH(); if (r) return r; }
+  return [items];
+}
+
+/* ── Filas → líneas ───────────────────────────────────────────────────── */
+function rowsToLines(rows) {
+  return rows.map((r) => {
+    let text = "", prev = null;
+    for (const p of r.items) {
+      const s = itemText(p);
+      if (!s.trim()) { if (s && text && !/\s$/.test(text)) text += " "; prev = p; continue; }
+      if (prev && text && !/\s$/.test(text) && !/^\s/.test(s)) {
+        /* pdf.js parte una palabra en varios items por kerning: solo se inserta
+           espacio si hay un hueco real, no en cada corte. */
+        if (p.x0 - prev.x1 > Math.max(0.9, p.size * 0.18)) text += " ";
+      }
+      text += s;
+      prev = p;
+    }
+    text = text.replace(/[ \t]{2,}/g, " ").trim();
+
+    /* El estilo de la línea es el del texto que más pesa en ella. */
+    const byStyle = new Map();
+    for (const p of r.items) {
+      const k = p.font + "|" + p.size.toFixed(1);
+      const e = byStyle.get(k) || { n: 0, p };
+      e.n += cleanStr(p.str).trim().length;
+      byStyle.set(k, e);
+    }
+    let dom = null;
+    for (const e of byStyle.values()) if (!dom || e.n > dom.n) dom = e;
+    const ref = dom ? dom.p : r.items[0];
+
+    return {
+      text, y: r.anchor,
+      x0: Math.min(...r.items.map((i) => i.x0)),
+      x1: Math.max(...r.items.map((i) => i.x1)),
+      size: ref.size, font: ref.font, bold: !!ref.bold, italic: !!ref.italic,
+      junk: Math.max(...r.items.map((i) => i.junk || 0)),
+    };
+  }).filter((l) => l.text);
+}
+
+const BULLET_RE = new RegExp(
+  "^\\s*(?:(?:[\\u2022\\u2023\\u25AA\\u25E6\\u25B8\\u25CF\\u25CB\\u2013\\u2014\\u00B7*+-]"
+  + "|\\d{1,3}[.)]|[a-zA-Z][.)])\\s+)");
+const isListItem = (t) => BULLET_RE.test(t);
+
+function blockAlignment(lines) {
+  if (lines.length < 2) return "left";
+  const tol = Math.max(2, median(lines.map((l) => l.size)) * 0.3);
+  const spread = (arr) => Math.max(...arr) - Math.min(...arr);
+  if (spread(lines.map((l) => l.x0)) <= tol) return "left";
+  if (spread(lines.map((l) => (l.x0 + l.x1) / 2)) <= tol) return "center";
+  if (spread(lines.map((l) => l.x1)) <= tol) return "right";
+  return "left";
+}
+
+/* ── Líneas → párrafos ────────────────────────────────────────────────── */
+/* Deshace el corte visual de renglón. Sin esto el Markdown sale picado: cada
+   renglón del PDF queda como una línea suelta, y al pegarlo en Notion el texto
+   se lee cortado a la mitad de cada frase. */
+function toBlocks(lines) {
+  if (!lines.length) return [];
+  const deltas = [];
+  for (let i = 1; i < lines.length; i++) deltas.push(lines[i].y - lines[i - 1].y);
+  const medDelta = median(deltas.filter((d) => d > 0));
+  const rightEdge = Math.max(...lines.map((l) => l.x1));
+  const align = blockAlignment(lines);
+
+  const blocks = [];
+  let cur = null;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i], p = lines[i - 1];
+    let join = false;
+    if (cur && p) {
+      const sameStyle = p.font === l.font &&
+        Math.abs(p.size - l.size) <= Math.max(p.size, l.size) * 0.15;
+      const expected = medDelta > 0 ? medDelta * 1.35 : Math.max(p.size, l.size) * 1.4;
+      const closeEnough = (l.y - p.y) <= expected;
+
+      /* La prueba clave en texto alineado a la izquierda: ¿la primera palabra
+         de la línea siguiente HABRÍA cabido en la anterior? Si cabía, el
+         renglón terminó a propósito —es otro ítem, otra fila, otro párrafo— y
+         unirlos sería inventar continuidad. Si no cabía, fue un corte
+         automático y hay que deshacerlo. Mirar solo el largo no alcanza. */
+      let wrapped;
+      if (align === "center") wrapped = true;
+      else if (align === "right") {
+        /* Alineado a la derecha conviven dos cosas con la misma geometría: un
+           rótulo corto partido en dos renglones ("First / Course" en un menú) y
+           una lista de campos independientes ("Fecha… / Vence…" en el
+           encabezado de una factura). Se separan por forma, no por posición. */
+        wrapped = lines.length === 2 && (p.text.length + l.text.length) <= 60;
+      } else {
+        const avgChar = p.text.length ? (p.x1 - p.x0) / p.text.length : l.size * 0.5;
+        const firstWord = (l.text.match(/^\S+/) || [""])[0];
+        /* +1 por el espacio que también habría que meter. */
+        wrapped = p.x1 + avgChar * (firstWord.length + 1) * 0.95 > rightEdge;
+      }
+      join = sameStyle && closeEnough && wrapped && !isListItem(l.text);
+    }
+    if (join) {
+      const glue = /[\u2010-\u2015-]$/.test(cur.text) ? "" : " ";
+      cur.text = (cur.text.replace(/[\u2010-\u2015-]$/, "") + glue + l.text).replace(/\s{2,}/g, " ");
+      cur.x1 = Math.max(cur.x1, l.x1);
+      cur.lines++;
+    } else {
+      cur = {
+        text: l.text, size: l.size, font: l.font, bold: l.bold, italic: l.italic,
+        x0: l.x0, x1: l.x1, y: l.y, junk: l.junk, lines: 1,
+      };
+      blocks.push(cur);
+    }
+  }
+  return blocks;
+}
+
+/* Muchos generadores de PDF dibujan las viñetas como vectores, no como texto:
+   en la capa de texto no queda ni rastro del punto. Lo que sí queda es la
+   sangría francesa. Un tramo de bloques seguidos que arrancan en la misma x,
+   sangrados respecto al margen de la página, es una lista — y recuperarla
+   importa porque en Notion una lista se lee y se reordena, y un párrafo suelto
+   no. La sangría se mide contra el margen de la PÁGINA, no el de la región:
+   cuando el XY-cut aísla la lista en su propia región, adentro ya no hay contra
+   qué compararla. */
+function markIndentedLists(blocks, bodySize, margin) {
+  if (blocks.length < 2 || margin === null) return blocks;
+  let i = 0;
+  while (i < blocks.length) {
+    const indent = blocks[i].x0 - margin;
+    if (indent < bodySize * 0.4 || indent > bodySize * 6) { i++; continue; }
+    let j = i;
+    while (j + 1 < blocks.length && Math.abs(blocks[j + 1].x0 - blocks[i].x0) <= 1.5) j++;
+    /* Dos condiciones para no confundir una lista con una columna de cifras
+       sangrada: al menos dos ítems, y cada ítem tiene que ser una frase, no un
+       número suelto. */
+    const run = blocks.slice(i, j + 1);
+    const phrases = run.every((b) => b.text.trim().split(/\s+/).length >= 3);
+    if (j > i && phrases && !run.some((b) => b.table || isListItem(b.text))) {
+      for (let k = i; k <= j; k++) blocks[k].bullet = true;
+    }
+    i = j + 1;
+  }
+  return blocks;
+}
+
+/* ── Tablas ───────────────────────────────────────────────────────────── */
+/* Se buscan tramos CONTIGUOS de filas alineadas en las mismas columnas, en vez
+   de preguntar si la región entera es una tabla: así una tabla incrustada entre
+   párrafos se detecta igual, que es el caso normal en informes. */
+
+/* Una CELDA es un tramo de items separado del siguiente por un hueco mayor que
+   un espacio entre palabras. Construirlas así resuelve dos cosas de golpe: las
+   ligaduras que el generador emite como items sueltos ("Ampli"+"fi"+"cación")
+   vuelven a ser una sola celda, y una línea de prosa justificada —donde cada
+   palabra es un item— colapsa en UNA celda y por lo tanto deja de parecerse a
+   una fila de tabla. */
+function cellsOf(row) {
+  const cells = [];
+  for (const it of row.items) {
+    const s = itemText(it);
+    if (!s.trim()) continue;
+    const last = cells[cells.length - 1];
+    if (last && it.x0 - last.x1 <= Math.max(3, it.size)) {
+      const sep = it.x0 - last.x1 > Math.max(0.9, it.size * 0.18) ? " " : "";
+      last.text += sep + s;
+      last.x1 = Math.max(last.x1, it.x1);
+    } else {
+      cells.push({ x0: it.x0, x1: it.x1, size: it.size, text: s });
+    }
+  }
+  for (const c of cells) c.text = c.text.replace(/\s{2,}/g, " ").trim();
+  return cells.filter((c) => c.text);
+}
+
+/* Cuánto de la fila es tinta y cuánto es aire. Una tabla tiene celdas cortas
+   con espacio de sobra; dos columnas de prosa tienen líneas que llenan casi
+   todo el ancho. Es lo que distingue una tabla de dos columnas de un texto a
+   dos columnas, que para la geometría son idénticos. */
+function inkRatio(rows, i0, i1) {
+  const rs = [];
+  for (let j = i0; j <= i1; j++) {
+    const cells = cellsOf(rows[j]);
+    if (cells.length < 2) continue;
+    const span = Math.max(...cells.map((c) => c.x1)) - Math.min(...cells.map((c) => c.x0));
+    if (span > 0) rs.push(cells.reduce((a, c) => a + (c.x1 - c.x0), 0) / span);
+  }
+  return rs.length ? median(rs) : 1;
+}
+
+const MARKER_ONLY_RE = new RegExp(
+  "^\\s*(?:\\d{1,3}[.)]|[a-zA-Z][.)]"
+  + "|[\\u2022\\u2023\\u25AA\\u25E6\\u25B8\\u25CF\\u25CB\\u00B7*+-])\\s*$");
+
+const cellOverlap = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+
+/* Las columnas se identifican por SOLAPE de intervalos, no por coincidencia de
+   bordes: en una tabla real la columna de texto va alineada a la izquierda y la
+   de montos a la derecha, así que exigir que todas coincidan por el mismo borde
+   dejaba fuera a cualquier factura. */
+function growRun(rows, i0) {
+  let cols = cellsOf(rows[i0]).map((c) => ({ x0: c.x0, x1: c.x1 }));
+  if (cols.length < 2) return null;
+  let i1 = i0;
+
+  for (let j = i0 + 1; j < rows.length; j++) {
+    const cells = cellsOf(rows[j]);
+    if (cells.length < 2 || cells.length > cols.length) break;
+    const next = cols.map((c) => ({ x0: c.x0, x1: c.x1 }));
+    const used = new Set();
+    let ok = true;
+    for (const cell of cells) {
+      const hits = [];
+      cols.forEach((c, k) => { if (cellOverlap(cell, c) > 0) hits.push(k); });
+      /* Una celda que no cae en ninguna columna, o que se estira sobre dos, no
+         es una celda: es una línea de texto cruzando la tabla. */
+      if (hits.length !== 1 || used.has(hits[0])) { ok = false; break; }
+      used.add(hits[0]);
+      next[hits[0]].x0 = Math.min(next[hits[0]].x0, cell.x0);
+      next[hits[0]].x1 = Math.max(next[hits[0]].x1, cell.x1);
+    }
+    if (!ok) break;
+    const sorted = next.slice().sort((a, b) => a.x0 - b.x0);
+    if (sorted.some((c, k) => k > 0 && c.x0 < sorted[k - 1].x1)) break;
+    cols = sorted;
+    i1 = j;
+  }
+
+  if (i1 - i0 + 1 < 3 || cols.length < 2) return null;
+
+  /* Una lista numerada tiene la misma forma que una tabla de dos columnas:
+     marcador a la izquierda, texto a la derecha. Se distingue por el CONTENIDO
+     de la primera columna, no por la geometría. */
+  let markers = 0, total = 0;
+  for (let j = i0; j <= i1; j++) {
+    const c = cellsOf(rows[j]).find((c) => cellOverlap(c, cols[0]) > 0);
+    if (!c) continue;
+    total++;
+    if (MARKER_ONLY_RE.test(c.text)) markers++;
+  }
+  if (total && markers / total > 0.7) return null;
+
+  /* Y dos columnas de prosa son dos columnas, no una tabla de dos celdas. */
+  if (cols.length === 2 && inkRatio(rows, i0, i1) >= 0.8) return null;
+
+  return { i0, i1, cols };
+}
+
+/* El encabezado de una tabla suele ir CENTRADO en su columna mientras los datos
+   van a la izquierda o a la derecha, así que la fila de títulos no solapa con
+   ninguna celda y se queda afuera. Se recupera aparte: misma cantidad de
+   celdas, cada una más cerca del centro de su columna que de cualquier otra, y
+   sin cruzarse de orden. Una línea de prosa no pasa la prueba, porque colapsa
+   en una sola celda y no coincide la cantidad. */
+function absorbRow(rows, j, cols) {
+  if (j < 0 || j >= rows.length) return false;
+  const cells = cellsOf(rows[j]);
+  if (cells.length !== cols.length) return false;
+  const center = (o) => (o.x0 + o.x1) / 2;
+  for (let k = 0; k < cells.length; k++) {
+    let bestK = 0, best = Infinity;
+    cols.forEach((c, i) => {
+      const d = Math.abs(center(cells[k]) - center(c));
+      if (d < best) { best = d; bestK = i; }
+    });
+    if (bestK !== k) return false;
+  }
+  return true;
+}
+
+function runToMd(rows, run) {
+  const grid = [];
+  for (let j = run.i0; j <= run.i1; j++) {
+    const cells = new Array(run.cols.length).fill("");
+    for (const c of cellsOf(rows[j])) {
+      let k = 0, best = -Infinity;
+      run.cols.forEach((col, i) => {
+        const o = cellOverlap(c, col);
+        if (o > best) { best = o; k = i; }
+      });
+      cells[k] = (cells[k] ? cells[k] + " " : "") + c.text;
+    }
+    grid.push(cells.map((c) => c.replace(/\|/g, "\\|").trim()));
+  }
+  if (grid.some((r) => r.filter(Boolean).length < 2)) return null;
+  const head = grid[0];
+  return [
+    "| " + head.join(" | ") + " |",
+    "| " + head.map(() => "---").join(" | ") + " |",
+    ...grid.slice(1).map((r) => "| " + r.join(" | ") + " |"),
+  ].join("\n");
+}
+
+function findTables(rows) {
+  const found = [];
+  let i = 0;
+  while (i < rows.length) {
+    const run = growRun(rows, i);
+    if (run) {
+      while (run.i0 > 0 && absorbRow(rows, run.i0 - 1, run.cols)) run.i0--;
+      while (run.i1 < rows.length - 1 && absorbRow(rows, run.i1 + 1, run.cols)) run.i1++;
+      const md = runToMd(rows, run);
+      if (md) { found.push({ i0: run.i0, i1: run.i1, cols: run.cols, md }); i = run.i1 + 1; continue; }
+    }
+    i++;
+  }
+  return found;
+}
+
+/* ¿La región es, en lo esencial, una tabla? Se consulta ANTES de cortar en
+   vertical, para que el XY-cut no se lleve las filas de encuentro. */
+function looksTabular(rows) {
+  if (rows.length < 3) return false;
+  for (const r of findTables(rows)) {
+    if (r.i1 - r.i0 + 1 >= Math.max(3, rows.length * 0.6)) return true;
+  }
+  return false;
+}
+
+/* ── Estilos del documento → niveles de título ─────────────────────────── */
+function buildStyleModel(blocks) {
+  const weight = new Map(), fontWeight = new Map();
+  for (const b of blocks) {
+    const n = b.text.length;
+    const s = Math.round(b.size * 2) / 2;
+    weight.set(s, (weight.get(s) || 0) + n);
+    const k = b.font + "|" + s;
+    fontWeight.set(k, (fontWeight.get(k) || 0) + n);
+  }
+  let bodySize = 10, best = -1;
+  for (const [s, n] of weight) if (n > best) { best = n; bodySize = s; }
+  let bodyKey = "", bestK = -1;
+  for (const [k, n] of fontWeight) if (n > bestK) { bestK = n; bodyKey = k; }
+  const bodyFont = bodyKey.split("|")[0];
+
+  /* Los tamaños por encima del cuerpo se agrupan (uno o dos puntos de
+     diferencia son el mismo nivel visual) y se ordenan: el más grande es h1. */
+  const bigger = [...weight.keys()].filter((s) => s > bodySize * 1.12).sort((a, b) => b - a);
+  const clusters = [];
+  for (const s of bigger) {
+    const c = clusters.find((c) => Math.abs(c[0] - s) <= c[0] * 0.10);
+    if (c) c.push(s); else clusters.push([s]);
+  }
+  const levelOf = new Map();
+  clusters.slice(0, 6).forEach((c, i) => c.forEach((s) => levelOf.set(s, i + 1)));
+  return { bodySize, bodyFont, levelOf };
+}
+
+const STOPWORD_RE = /^(at|en|de|por|the|el|la|y|and|&|·|-|–|—|\|)$/i;
+
+function blockToMd(b, model) {
+  const t = b.text.trim();
+  if (!t) return "";
+  const s = Math.round(b.size * 2) / 2;
+  const lvl = model.levelOf.get(s);
+
+  /* El título se evalúa ANTES que la lista: un encabezado numerado ("2. Datos y
+     método") tiene forma de ítem de lista sin serlo, y tratarlo como lista
+     borraba el encabezado y renumeraba el documento entero. */
+  if (lvl && b.lines <= 2 && t.length <= 120 && !STOPWORD_RE.test(t)) {
+    return "#".repeat(Math.min(6, lvl)) + " " + t;
+  }
+
+  if (b.bullet && !isListItem(t)) return "- " + t;
+
+  if (isListItem(t)) {
+    const m = t.match(/^\s*(\d{1,3})[.)]\s+/);
+    /* Se conserva el número original: renumerar todo a "1." hace que quien lea
+       el Markdown en crudo pierda el orden real. */
+    return m ? t.replace(BULLET_RE, m[1] + ". ") : t.replace(BULLET_RE, "- ");
+  }
+
+  /* Mismo tamaño que el cuerpo pero otra fuente → énfasis, no encabezado. La
+     negrita y la cursiva se leen del nombre real de la fuente embebida
+     (Lato-Bold, Lato-Italic), no se adivinan por el grosor aparente. */
+  if (b.lines <= 2 && t.length <= 160) {
+    if (b.bold && !/[.;:,]$/.test(t)) return "**" + t + "**";
+    if (b.italic && b.font !== model.bodyFont) return "*" + t + "*";
+  }
+  return t;
+}
+
+/* ── Página completa ──────────────────────────────────────────────────── */
+function pageToBlocks(items) {
+  const usable = items.filter((i) => i.str && i.str.trim());
+  if (!usable.length) return [];
+  const out = [];
+  let regionId = 0;
+  const push = (arr) => { for (const b of arr) { b.region = regionId; out.push(b); } };
+
+  for (const region of segment(usable)) {
+    regionId++;
+    const rows = toRows(region);
+    const tables = findTables(rows);
+    if (!tables.length) {
+      const lines = rowsToLines(rows);
+      if (lines.length) push(toBlocks(lines));
+      continue;
+    }
+    /* Se intercala: prosa antes de la tabla, tabla, prosa después. */
+    let cursor = 0;
+    for (const tb of tables) {
+      if (tb.i0 > cursor) {
+        const lines = rowsToLines(rows.slice(cursor, tb.i0));
+        if (lines.length) push(toBlocks(lines));
+      }
+      push([{ table: tb.md, text: tb.md, size: 0, font: "", lines: 1, junk: 0, x0: 0 }]);
+      cursor = tb.i1 + 1;
+    }
+    if (cursor < rows.length) {
+      const lines = rowsToLines(rows.slice(cursor));
+      if (lines.length) push(toBlocks(lines));
+    }
+  }
+  return out;
+}
+
+/* Un párrafo cortado por el salto de página son dos bloques en dos páginas
+   distintas. Se unen si comparten estilo, el primero no cerró la frase y el
+   segundo no arranca como un elemento nuevo. */
+function joinAcrossPages(pageBlocks, model) {
+  for (let i = 1; i < pageBlocks.length; i++) {
+    const prev = pageBlocks[i - 1], cur = pageBlocks[i];
+    if (!prev.length || !cur.length) continue;
+    const a = prev[prev.length - 1], b = cur[0];
+    if (a.table || b.table || a.bullet || b.bullet) continue;
+    if (a.font !== b.font) continue;
+    if (Math.abs(a.size - b.size) > Math.max(a.size, b.size) * 0.15) continue;
+    if (model.levelOf.get(Math.round(a.size * 2) / 2)) continue;
+    if (/[.!?:;]$/.test(a.text.trim())) continue;
+    if (isListItem(b.text) || /^[A-ZÁÉÍÓÚÑ0-9]/.test(b.text.trim())) continue;
+    a.text = (a.text + " " + b.text).replace(/\s{2,}/g, " ");
+    a.lines += b.lines;
+    cur.shift();
+  }
+}
+
+/* Devuelve el Markdown de CADA página por separado: el flujo de OCR necesita
+   poder reemplazar una página suelta sin volver a derivar las demás. */
+function renderPagesMd(pageBlocks) {
+  const model = buildStyleModel(pageBlocks.flat().filter((b) => !b.table));
+  joinAcrossPages(pageBlocks, model);
+
+  for (const blocks of pageBlocks) {
+    const weight = new Map();
+    for (const b of blocks) {
+      if (b.table) continue;
+      const k = Math.round(b.x0);
+      weight.set(k, (weight.get(k) || 0) + b.text.length);
+    }
+    let margin = null, bestW = -1;
+    for (const [x, n] of weight) if (n > bestW) { bestW = n; margin = x; }
+
+    const byRegion = new Map();
+    for (const b of blocks) {
+      if (!byRegion.has(b.region)) byRegion.set(b.region, []);
+      byRegion.get(b.region).push(b);
+    }
+    for (const group of byRegion.values()) markIndentedLists(group, model.bodySize, margin);
+  }
+
+  return pageBlocks.map((blocks) => {
+    const md = blocks.map((b) => (b.table ? b.table : blockToMd(b, model))).filter(Boolean);
+    let out = "";
+    md.forEach((t, i) => {
+      if (!i) { out = t; return; }
+      /* Los ítems consecutivos de una lista van pegados: en Markdown una línea
+         en blanco entre ítems rompe la lista en párrafos sueltos. */
+      const tight = isListItem(t) && isListItem(md[i - 1]);
+      out += (tight ? "\n" : "\n\n") + t;
+    });
+    return out;
+  });
+}
+
+/* ── Normalización de los items de pdf.js ─────────────────────────────── */
+/* Se pasa todo a coordenadas de pantalla con la matriz del viewport (así una
+   página rotada se resuelve sola) y se resuelve el NOMBRE REAL de cada fuente
+   —"Lato-Bold", "Lato-Italic"— pidiéndole a pdf.js los objetos de fuente ya
+   cargados. De ahí salen la negrita y la cursiva exactas; el textContent por sí
+   solo devuelve "sans-serif" para todo y obliga a adivinar. */
+async function normalizePageItems(pdfjsLib, page) {
+  const vp = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+
+  const fonts = new Map();
+  try {
+    await page.getOperatorList();   // resuelve los objetos de fuente
+    for (const name of new Set(content.items.map((it) => it.fontName).filter(Boolean))) {
+      let real = name;
+      try {
+        const o = page.commonObjs.get(name);
+        if (o && o.name) real = o.name;
+      } catch (e) { /* fuente no resuelta: se sigue con el id interno */ }
+      fonts.set(name, { real, bold: BOLD_FONT_RE.test(real), italic: ITALIC_FONT_RE.test(real) });
+    }
+  } catch (e) { /* sin nombres de fuente se pierde el énfasis, no el texto */ }
+
+  const T = pdfjsLib.Util && pdfjsLib.Util.transform;
+  const items = [];
+  let junkChars = 0, totalChars = 0;
+
+  for (const it of content.items) {
+    if (typeof it.str !== "string" || !it.str) continue;
+    let x, y, size;
+    if (T) {
+      const tx = T(vp.transform, it.transform);
+      x = tx[4]; y = tx[5];
+      size = Math.hypot(tx[2], tx[3]) || Math.abs(tx[3]) || 1;
+    } else {
+      x = it.transform[4];
+      y = vp.height - it.transform[5];
+      size = Math.abs(it.transform[3]) || 1;
+    }
+    const f = fonts.get(it.fontName) || { real: it.fontName || "", bold: false, italic: false };
+    const junk = junkRatio(it.str);
+    junkChars += Math.round(junk * it.str.length);
+    totalChars += it.str.length;
+    items.push({
+      str: it.str, x0: x, x1: x + (it.width || 0),
+      y, top: y - size * 0.80, bottom: y + size * 0.25,
+      size, font: f.real, bold: f.bold, italic: f.italic, junk,
+    });
+  }
+  return { items, junkChars, totalChars };
 }
 
 function finalizePagesText(pages) {
@@ -796,28 +1455,37 @@ async function convertPdf(file, onProgress) {
   const pdfjsLib = await getPdfjs();
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const pages = [];
+  const pageBlocks = [];
+  const junkByPage = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
-    if (onProgress) onProgress(i, pdf.numPages, "Extrayendo texto");
+    if (onProgress) onProgress(i, pdf.numPages, "Reconstruyendo estructura");
     const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    pages.push(reconstructPageText(content.items));
+    const { items, junkChars, totalChars } = await normalizePageItems(pdfjsLib, page);
+    pageBlocks.push(pageToBlocks(items));
+    junkByPage.push(totalChars ? junkChars / totalChars : 0);
     page.cleanup();
   }
 
-  /* Se decide página por página, no con un promedio del documento entero:
-     unas pocas páginas con mucho texto no deben tapar que OTRAS páginas
-     individuales no tengan texto extraíble (ej. anexos escaneados en un
-     documento que empieza con una carta tipeada). Tampoco se descarta nunca
-     el texto ya extraído correctamente — antes, una página con poco texto
-     pero 100% real (ej. una portada con solo un título) perdía su extracción
-     directamente, sin mostrar nada, a menos que el usuario corriera OCR. */
+  const pages = renderPagesMd(pageBlocks);
+
+  /* Se decide página por página, no con un promedio del documento entero: unas
+     pocas páginas con mucho texto no deben tapar que OTRAS no tengan texto
+     extraíble. Y nunca se descarta lo que ya se extrajo bien — se ofrece OCR
+     solo para lo que falta. */
   const sparsePages = [];
   pages.forEach((p, idx) => { if (p.length < 40) sparsePages.push(idx); });
 
+  /* Distinto de "escaneada": la página SÍ tiene texto, pero parte de sus glifos
+     no mapean a Unicode. Es el caso más traicionero porque el resultado parece
+     texto — antes salía "SúUñ" donde decía "Chef Saúl Umaña". Ahora eso queda
+     marcado y se avisa, sin obligar a rehacer con OCR una página que por lo
+     demás está perfecta. */
+  const garbledPages = [];
+  junkByPage.forEach((r, idx) => { if (r > 0.005 && sparsePages.indexOf(idx) === -1) garbledPages.push(idx); });
+
   const text = finalizePagesText(pages);
-  return { pages, text, sparsePages, numPages: pdf.numPages, buf };
+  return { pages, text, sparsePages, garbledPages, numPages: pdf.numPages, buf };
 }
 
 async function ocrPdf(buf, targetPages, onProgress) {
@@ -956,12 +1624,28 @@ function renderItem(item) {
   if (item.status === "needs-ocr") {
     const nSparse = (item.sparsePages && item.sparsePages.length) || item.numPages;
     const allSparse = nSparse === item.numPages;
+    /* Hay dos razones distintas para llegar acá y conviene decir cuál es: la
+       página no tiene texto (escaneada), o lo tiene pero con glifos que la
+       fuente no mapea a Unicode. El segundo caso es más traicionero porque el
+       resultado PARECE texto. Donde pasa, queda marcado [ilegible]. */
     const notice = allSparse
       ? "Este PDF casi no tiene texto seleccionable — probablemente es un documento escaneado. Puedo leerlo con OCR local (gratis, sin salir de tu compu). Tardará unos segundos por página."
       : nSparse + " de " + item.numPages + " páginas no tienen texto seleccionable (probablemente escaneadas) — el resto ya se extrajo bien y lo ves abajo. Puedo completar solo esas páginas con OCR local.";
     html +=
       '<div class="notice-box">' + notice + '</div>' +
       '<div class="card-actions"><button class="btn btn-warn" data-act="ocr">🔍 Ejecutar OCR local (' + nSparse + ' pág.)</button></div>';
+  }
+
+  if (item.status === "done" && item.garbledPages && item.garbledPages.length) {
+    /* Se dice qué se perdió y dónde, en vez de entregar palabras inventadas.
+       El OCR queda ofrecido pero no impuesto: el resto de la página está bien
+       extraído y rehacerla entera sería cambiar texto exacto por texto
+       aproximado. */
+    const n = item.garbledPages.length;
+    html +=
+      '<div class="notice-box">Parte del texto usa glifos que la fuente no mapea a Unicode — pasa con tipografías decorativas y de menú. Esos fragmentos quedaron marcados como <b>[ilegible]</b> en vez de convertirse en palabras falsas. Afecta ' +
+        (n === 1 ? "1 página" : n + " páginas") + ' de ' + item.numPages + '. Si necesitás ese pedazo, el OCR local puede intentar recuperarlo.</div>' +
+      '<div class="card-actions"><button class="btn btn-warn" data-act="ocr">🔍 Intentar OCR en ' + (n === 1 ? "esa página" : "esas páginas") + '</button></div>';
   }
 
   if (item.status === "done" || (item.status === "needs-ocr" && item.md && item.md.trim())) {
@@ -1090,12 +1774,25 @@ async function processItem(item, file, ext) {
       case "pdf": {
         const res = await convertPdf(file, (cur, total, label) => update(label + " · página " + cur + " de " + total, cur / total));
         item.numPages = res.numPages;
+        if (!res.sparsePages.length && res.garbledPages.length) {
+          /* El texto sirve tal cual: se entrega y se avisa, con el OCR a mano
+             por si vale la pena intentar recuperar esos fragmentos. */
+          item.status = "done";
+          item.garbledPages = res.garbledPages;
+          item.pdfBuf = res.buf;
+          item.pdfPages = res.pages;
+          item.sparsePages = res.garbledPages;
+          item.md = res.text;
+          renderItem(item);
+          return;
+        }
         if (res.sparsePages.length) {
           /* Algunas páginas (no necesariamente todas) no tienen texto
              seleccionable — se deja visible/copiable lo que sí se extrajo
              bien en vez de descartarlo, y se ofrece OCR solo para las que
              faltan. */
           item.status = "needs-ocr";
+          item.garbledPages = res.garbledPages;
           item.pdfBuf = res.buf;
           item.pdfPages = res.pages;
           item.sparsePages = res.sparsePages;
@@ -1151,6 +1848,7 @@ async function runOcrOnItem(item) {
     item.pdfBuf = null;
     item.pdfPages = null;
     item.sparsePages = null;
+    item.garbledPages = null;
     renderItem(item);
   } catch (err) {
     item.status = "error";
